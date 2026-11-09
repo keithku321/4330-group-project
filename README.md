@@ -5,15 +5,46 @@
 The experiments run locally on an RTX 5060 Ti (16 GB) through Ollama, so there are no API costs.
 
 ```
-python -m venv .venv
-.venv\Scripts\python -m pip install lightrag-hku ollama huggingface_hub numpy tiktoken
+py -3.14 -m venv .venv
+.venv\Scripts\python -m pip install -r requirements.txt
 ollama pull qwen2.5:14b
 ollama pull bge-m3
 ```
 
+`requirements.txt` targets Python 3.14 and allows pre-release and nightly builds (`--pre`, plus the scientific-python nightly index for numpy). It covers both the experiment and the evaluation packages. The Visual Studio project is `LightRAG.slnx`, and it uses the `.venv` interpreter.
+
+### Models
+
+`config.py` chooses the models when it is imported:
+
+| Role | Preferred (the experiment's model) | Used automatically if the preferred one is not installed |
+|---|---|---|
+| LLM | `qwen2.5:14b` | `qwen3.5:9b-q4_K_M` |
+| RAGAS judge | `qwen2.5-14b-judge` (`judge.Modelfile`) | `qwen3.5-9b-judge` (`judge-qwen3.5-9b.Modelfile`) |
+| Embeddings | `bge-m3` | none |
+
+A fallback is announced on stderr with a `[config]` line. Results produced with the 9B model are not directly comparable to those from the 14B model. Qwen 3.5 is a thinking model, so its thinking is switched off for both answering and judging; otherwise the hidden reasoning uses up the output-token cap. You can override the choice with `LIGHTRAG_LLM_MODEL`, `LIGHTRAG_JUDGE_MODEL` and `LIGHTRAG_THINK` (`0` or `1`).
+
 ## Data
 
 `prep_data.py` takes a subset of UltraDomain `mix.jsonl`. It keeps the shortest documents until the total reaches about 100k tokens. The result is 20 documents (95k tokens) and their 46 questions. Most of the questions are multi-hop (MuSiQue, 2WikiMQA, HotpotQA).
+
+### Quick test on a tiny subset
+
+Setting `LIGHTRAG_SUBSET` sends the corpus to `data/<name>/` and the results to `results/<name>/`. A trial run therefore never touches the real corpus or the resumable index. With a 5k-token budget the subset is the 2 shortest documents (about 4 chunks) and their 5 questions:
+
+```
+$env:LIGHTRAG_SUBSET = 'smoke'
+.venv\Scripts\python -X utf8 prep_data.py --target-tokens 5000
+.venv\Scripts\python -X utf8 exp1.py index
+.venv\Scripts\python -X utf8 exp1.py run --limit 2
+.venv\Scripts\python -X utf8 evaluate.py results\smoke\exp1_naive.jsonl results\smoke\exp1_lightrag.jsonl
+Remove-Item Env:LIGHTRAG_SUBSET
+```
+
+With the 9B fallback this took about 27 minutes in total: indexing 5 chunks took about 13 minutes, answering 2 questions with each system about 3 minutes, and judging about 10 minutes. Even with thinking off, 2 of the 5 extraction responses reached the `num_predict` cap (see "Capped extraction output" below).
+
+If you change the LLM, delete `results\<subset>\` before indexing again. Otherwise LightRAG's extraction cache reuses the old model's output.
 
 ## Experiment 1: naive RAG vs LightRAG
 
@@ -34,10 +65,11 @@ LightRAG runs with its default `mix` mode and reranking turned off. Every answer
 ## Evaluation
 
 ```
-.venv\Scripts\python -m pip install ragas langchain-ollama "langchain-community<0.4"
 ollama create qwen2.5-14b-judge -f judge.Modelfile
 .venv\Scripts\python -X utf8 evaluate.py results\exp1_naive.jsonl results\exp1_lightrag.jsonl
 ```
+
+The evaluation packages are already in `requirements.txt`. When only the 9B model is available, create its judge instead with `ollama create qwen3.5-9b-judge -f judge-qwen3.5-9b.Modelfile`.
 
 `langchain-community` has to stay below 0.4, because ragas 0.4.3 still imports `ChatVertexAI`, which was removed in 0.4. The judge model `qwen2.5-14b-judge` is qwen2.5:14b with a 16k context set in its Modelfile. Ollama's OpenAI-compatible API, which RAGAS uses, cannot set the context size per request, so it would otherwise fall back to Ollama's 4k default.
 

@@ -77,5 +77,5 @@ if __name__ == "__main__":
     ap.add_argument("step", choices=["index", "run"])
     ap.add_argument("--limit", type=int)
     args = ap.parse_args()
-    RESULTS.mkdir(exist_ok=True)
+    RESULTS.mkdir(parents=True, exist_ok=True)  # parents: a LIGHTRAG_SUBSET run nests under results/
     asyncio.run(index() if args.step == "index" else run(args.limit))

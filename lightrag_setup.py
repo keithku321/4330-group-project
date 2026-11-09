@@ -3,7 +3,7 @@ from lightrag import LightRAG
 from lightrag.llm.ollama import ollama_embed, ollama_model_complete
 from lightrag.utils import TokenTracker
 
-from config import CHUNK_OVERLAP, CHUNK_SIZE, LLM_MODEL, LLM_OPTIONS, OLLAMA_HOST, RESULTS
+from config import CHUNK_OVERLAP, CHUNK_SIZE, LLM_MODEL, LLM_OPTIONS, OLLAMA_HOST, RESULTS, THINK
 
 TRACKER = TokenTracker()
 
@@ -19,7 +19,11 @@ async def make_rag(working_dir=RESULTS / "lightrag_index", chunk_size=CHUNK_SIZE
         working_dir=str(working_dir),
         llm_model_func=llm,
         llm_model_name=LLM_MODEL,
-        llm_model_kwargs={"host": OLLAMA_HOST, "options": LLM_OPTIONS, "timeout": 900},
+        # LightRAG lifts a "think" key out of options and forwards it to the Ollama chat call; it is only added when
+        # LIGHTRAG_THINK is set, so the default qwen2.5:14b run receives exactly the original options.
+        llm_model_kwargs={"host": OLLAMA_HOST,
+                          "options": LLM_OPTIONS if THINK is None else {**LLM_OPTIONS, "think": THINK},
+                          "timeout": 900},
         llm_model_max_async=2,          # one local GPU: more parallel calls only queue up
         embedding_func=ollama_embed,    # bge-m3, 1024-dim
         chunk_token_size=chunk_size,
