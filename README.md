@@ -1,0 +1,61 @@
+# COMP 4330SEF P04 Group 5: LightRAG evaluation
+
+## Setup
+
+The experiments run locally on an RTX 5060 Ti (16 GB) through Ollama, so there are no API costs.
+
+```
+python -m venv .venv
+.venv\Scripts\python -m pip install lightrag-hku ollama huggingface_hub numpy tiktoken
+ollama pull qwen2.5:14b
+ollama pull bge-m3
+```
+
+## Data
+
+`prep_data.py` takes a subset of UltraDomain `mix.jsonl`. It keeps the shortest documents until the total reaches about 100k tokens. The result is 20 documents (95k tokens) and their 46 questions. Most of the questions are multi-hop (MuSiQue, 2WikiMQA, HotpotQA).
+
+## Experiment 1: naive RAG vs LightRAG
+
+```
+.venv\Scripts\python -X utf8 exp1.py index   # about 3 hours; can resume after interruption
+.venv\Scripts\python -X utf8 exp1.py run     # writes results/exp1_naive.jsonl and results/exp1_lightrag.jsonl
+```
+
+Both systems use the same settings:
+
+- **LLM:** qwen2.5:14b
+- **Embedding:** bge-m3
+- **Chunking:** 1200 tokens with 100 overlap
+- **Context budget:** about 12k tokens
+
+LightRAG runs with its default `mix` mode and reranking turned off. Every answer is saved with its token counts, latency and the retrieved document ids.
+
+## Evaluation
+
+```
+.venv\Scripts\python -m pip install ragas langchain-ollama "langchain-community<0.4"
+ollama create qwen2.5-14b-judge -f judge.Modelfile
+.venv\Scripts\python -X utf8 evaluate.py results\exp1_naive.jsonl results\exp1_lightrag.jsonl
+```
+
+`langchain-community` has to stay below 0.4, because ragas 0.4.3 still imports `ChatVertexAI`, which was removed in 0.4. The judge model `qwen2.5-14b-judge` is qwen2.5:14b with a 16k context set in its Modelfile. Ollama's OpenAI-compatible API, which RAGAS uses, cannot set the context size per request, so it would otherwise fall back to Ollama's 4k default.
+
+**Metrics**
+
+| Group | Metric | How it is measured |
+|---|---|---|
+| Retrieval | hit rate, nDCG | At document level: a retrieved chunk counts as relevant if it comes from the question's source document |
+| Generation | faithfulness, answer relevancy | RAGAS, with the local LLM as judge |
+| Generation | token F1 | Compared against the gold answer |
+| Cost | tokens, LLM calls, latency | Copied from the run |
+
+Per-answer scores go to `results/scores.jsonl`. The averages for each system go to `results/summary.csv`. The judge is the same model that generates the answers; this is a known source of bias and should be listed under limitations.
+
+Do not run the evaluation while indexing is in progress. The judge needs the same GPU, so Ollama keeps swapping the two models in and out of memory.
+
+## Differences from the proposal
+
+- **Local models instead of an API.** We use local qwen2.5:14b and bge-m3 instead of GPT-4o-mini and an embedding API. This keeps the cost at zero.
+- **Smaller context window.** Context is set to 16k tokens instead of LightRAG's 30k default, so that the model fits entirely on a 16 GB GPU.
+- **Capped extraction output.** Extraction output is limited with `num_predict=3000`, because qwen2.5 otherwise over-extracts and loops. This cap truncates some chunks, so a few relations are lost.
