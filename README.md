@@ -13,7 +13,7 @@ ollama pull bge-m3
 
 ## Data
 
-`prep_data.py` takes a subset of UltraDomain `mix.jsonl`. It keeps the shortest documents until the total reaches about 100k tokens. The result is 20 documents (95k tokens) and their 46 questions. Most of the questions are multi-hop (MuSiQue, 2WikiMQA, HotpotQA).
+`prep_data.py` takes a subset of UltraDomain `mix.jsonl`. It keeps the shortest documents until the total reaches about 100k tokens. The result is 20 documents (95k tokens) and their 46 questions. Of the 46 questions, 19 are multi-hop (2WikiMQA 16, HotpotQA 3); the rest are single-document (qasper 19, multifieldqa 8).
 
 ## Experiment 1: naive RAG vs LightRAG
 
