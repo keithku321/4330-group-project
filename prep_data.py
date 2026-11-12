@@ -1,4 +1,9 @@
-"""Build the Exp corpus: a ~100k-token subset of UltraDomain mix.jsonl plus all its questions."""
+"""Build the Exp corpus: a ~100k-token subset of UltraDomain mix.jsonl plus all its questions.
+
+    python prep_data.py                         # full experiment corpus (~100k tokens) -> data/
+    $env:LIGHTRAG_SUBSET='smoke'; python prep_data.py --target-tokens 5000   # tiny test corpus -> data/smoke/
+"""
+import argparse
 import hashlib
 import json
 
@@ -7,8 +12,13 @@ from huggingface_hub import hf_hub_download
 
 from config import CORPUS, DATA, QUESTIONS
 
-TARGET_TOKENS = 100_000
+parser = argparse.ArgumentParser()
+# Token budget for the corpus; the shortest documents are kept until adding the next would exceed it.
+parser.add_argument("--target-tokens", type=int, default=100_000)
+TARGET_TOKENS = parser.parse_args().target_tokens
 
+# The raw 5.7 MB mix.jsonl is downloaded once into data/ and shared by every subset.
+DATA.mkdir(parents=True, exist_ok=True)
 src = DATA / "mix.jsonl"
 if not src.exists():
     import shutil
@@ -31,6 +41,7 @@ for text in sorted(docs, key=lambda t: len(enc.encode(t))):
     total += n
 
 CORPUS.mkdir(parents=True, exist_ok=True)
+QUESTIONS.parent.mkdir(parents=True, exist_ok=True)
 for old in CORPUS.glob("*.txt"):
     old.unlink()
 for text in picked:

@@ -7,7 +7,7 @@ import ollama
 import tiktoken
 
 from config import (CHUNK_OVERLAP, CHUNK_SIZE, CORPUS, EMBED_MODEL, LLM_MODEL, LLM_OPTIONS,
-                    NAIVE_TOP_K, OLLAMA_HOST, RESULTS)
+                    NAIVE_TOP_K, OLLAMA_HOST, RESULTS, THINK)
 
 ENC = tiktoken.get_encoding("cl100k_base")
 INDEX = RESULTS / "naive_index"
@@ -61,7 +61,7 @@ class NaiveRAG:
         idx, _ = top_k(np.array(q["embeddings"][0], dtype=np.float32), self.vectors, NAIVE_TOP_K)
         retrieved = [self.chunks[i] for i in idx]
         context = "\n\n".join(f"[{n + 1}] {c['text']}" for n, c in enumerate(retrieved))
-        r = self.client.chat(model=LLM_MODEL, options=LLM_OPTIONS,
+        r = self.client.chat(model=LLM_MODEL, options=LLM_OPTIONS, think=THINK,
                              messages=[{"role": "user", "content": PROMPT.format(context=context, question=question)}])
         return {
             "answer": r["message"]["content"],

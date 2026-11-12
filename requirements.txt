@@ -1,0 +1,22 @@
+# Target interpreter: Python 3.14
+# Pre-releases are permitted so that the newest (nightly / dev) builds are chosen where PyPI offers them.
+--pre
+# Nightly wheels for numpy, published by the scientific-python project, are consulted alongside PyPI.
+--extra-index-url https://pypi.anaconda.org/scientific-python-nightly-wheels/simple
+
+# Core experiment stack (see README.md, "Setup")
+lightrag-hku
+ollama
+huggingface_hub
+numpy
+tiktoken
+
+# Evaluation stack (see README.md, "Evaluation")
+ragas
+openai
+langchain-ollama
+# Held below 0.4 because ragas still imports ChatVertexAI, which langchain-community 0.4 removed.
+langchain-community<0.4
+
+# Used by the Colab notebook only
+pandas
