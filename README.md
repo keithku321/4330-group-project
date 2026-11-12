@@ -1,4 +1,10 @@
-# COMP 4330SEF P04 Group 5: LightRAG evaluation
+# Exploration and Evaluation of LightRAG: A Graph-Enhanced Retrieval-Augmented Generation Framework
+
+COMP 4330SEF Advanced Programming and AI Algorithms, 2026 Autumn, P04 Group 5.
+
+This repository holds the code and the local results for the three experiments in our proposal: naive RAG vs LightRAG (Exp 1), chunk size and top-k (Exp 2), and LightRAG's five query modes (Exp 3). `COMP4330_Group5_LightRAG.ipynb` is the Google Colab version (GPT-4o-mini, as in the proposal); the `.py` scripts are the local version (qwen2.5:14b through Ollama). The two runs use different models, so do not mix their numbers.
+
+The collected local results are in [`share/`](share): `per_question.csv` (one row per question and system), `run_info.json` (models, settings, corpus, index cost), the per-experiment summaries and `DATA_NOTES.md`.
 
 ## Setup
 
@@ -13,7 +19,7 @@ ollama pull bge-m3
 
 ## Data
 
-`prep_data.py` takes a subset of UltraDomain `mix.jsonl`. It keeps the shortest documents until the total reaches about 100k tokens. The result is 20 documents (95k tokens) and their 46 questions. Most of the questions are multi-hop (MuSiQue, 2WikiMQA, HotpotQA).
+`prep_data.py` takes a subset of UltraDomain `mix.jsonl`. It keeps the shortest documents until the total reaches about 100k tokens. The result is 20 documents (95k tokens) and their 46 questions. Of the 46 questions, 19 are multi-hop (2WikiMQA 16, HotpotQA 3); the rest are single-document (qasper 19, multifieldqa 8).
 
 ## Experiment 1: naive RAG vs LightRAG
 
@@ -53,6 +59,31 @@ ollama create qwen2.5-14b-judge -f judge.Modelfile
 Per-answer scores go to `results/scores.jsonl`. The averages for each system go to `results/summary.csv`. The judge is the same model that generates the answers; this is a known source of bias and should be listed under limitations.
 
 Do not run the evaluation while indexing is in progress. The judge needs the same GPU, so Ollama keeps swapping the two models in and out of memory.
+
+## Experiment 2: chunk size and top-k
+
+```
+.venv\Scripts\python -X utf8 exp2.py index   # builds a second graph with 600-token chunks; several hours, resumable
+.venv\Scripts\python -X utf8 exp2.py run
+.venv\Scripts\python -X utf8 exp2.py score   # writes results/exp2_scores.jsonl and results/exp2_summary.csv
+```
+
+A 2x2 grid in `mix` mode: chunk size 600 / 1200 x top-k 20 / 40. top-k is how many entities and relations LightRAG retrieves; `chunk_top_k` stays at its default of 20. Chunk 1200 / top-k 40 is LightRAG's default, which is the Exp 3 `mix` run, so it is reused rather than rerun.
+
+## Experiment 3: query modes
+
+```
+.venv\Scripts\python -X utf8 exp3.py run     # naive, local, global, hybrid, mix on the Exp 1 index
+.venv\Scripts\python -X utf8 exp3.py score   # writes results/exp3_scores.jsonl and results/exp3_summary.csv
+```
+
+Faithfulness here is judged against everything LightRAG gave the LLM: the chunk text and the entity and relation descriptions.
+
+## Export
+
+```
+.venv\Scripts\python -X utf8 export.py       # writes share/per_question.csv, share/run_info.json and the summaries
+```
 
 ## Differences from the proposal
 

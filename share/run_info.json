@@ -1,0 +1,64 @@
+{
+  "backend": "Ollama (local GPU)",
+  "llm": "qwen2.5:14b",
+  "llm_options": {
+    "num_ctx": 16384,
+    "temperature": 0,
+    "num_predict": 3000
+  },
+  "embedding": "bge-m3:latest",
+  "embedding_dim": 1024,
+  "judge": "qwen2.5:14b, same model as the answers (RAGAS 0.4 faithfulness + answer relevancy)",
+  "chunk_size": 1200,
+  "chunk_overlap": 100,
+  "naive_top_k": 8,
+  "lightrag_top_k": 40,
+  "lightrag_chunk_top_k": 20,
+  "lightrag_max_context_tokens": 12000,
+  "reranker": false,
+  "exp2_settings": [
+    [
+      600,
+      20
+    ],
+    [
+      600,
+      40
+    ],
+    [
+      1200,
+      20
+    ],
+    [
+      1200,
+      40
+    ]
+  ],
+  "documents": 20,
+  "corpus_tokens_cl100k": 95302,
+  "corpus_words": 67078,
+  "chunks_at_1200": 94,
+  "questions": 46,
+  "index_cost_c1200_lower_bound": {
+    "docs": 20,
+    "index_time_s": 9659.4,
+    "prompt_tokens": 681579,
+    "completion_tokens": 334531,
+    "total_tokens": 1016110,
+    "call_count": 156
+  },
+  "index_cost_c600": {
+    "chunk_size": 600,
+    "docs": 20,
+    "index_time_s": 19335.5,
+    "prompt_tokens": 1435599,
+    "completion_tokens": 665888,
+    "total_tokens": 2101487,
+    "call_count": 405
+  },
+  "keyword_diagnostic": {
+    "questions": 46,
+    "empty_low_level": 16,
+    "empty_high_level": 0
+  }
+}
