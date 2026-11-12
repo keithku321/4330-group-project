@@ -23,9 +23,10 @@ from ragas.embeddings import embedding_factory
 from ragas.llms import llm_factory
 from ragas.metrics.collections import AnswerRelevancy, Faithfulness
 
-from config import OLLAMA_HOST, RESULTS
+# The judge is chosen in config.py: qwen2.5-14b-judge (judge.Modelfile) when installed, otherwise
+# qwen3.5-9b-judge (judge-qwen3.5-9b.Modelfile); LIGHTRAG_JUDGE_MODEL overrides both.
+from config import JUDGE_MODEL, JUDGE_THINK, OLLAMA_HOST, RESULTS
 
-JUDGE_MODEL = "qwen2.5-14b-judge"   # qwen2.5:14b with num_ctx 16384 baked in (judge.Modelfile)
 SCORES = RESULTS / "scores.jsonl"
 
 
@@ -74,7 +75,10 @@ async def main(files, limit):
     n_chunks = collections.Counter(c["doc_id"] for c in chunks)
 
     client = AsyncOpenAI(base_url=f"{OLLAMA_HOST}/v1", api_key="ollama")  # Ollama ignores the key
-    llm = llm_factory(JUDGE_MODEL, client=client, temperature=0, max_tokens=3000)
+    # Ollama's OpenAI-compatible API cannot take think=, but it maps reasoning_effort="none" to thinking off;
+    # nothing is sent when JUDGE_THINK is None, so the original qwen2.5 judge receives the original request.
+    reasoning = {} if JUDGE_THINK is None else {"reasoning_effort": "medium" if JUDGE_THINK else "none"}
+    llm = llm_factory(JUDGE_MODEL, client=client, temperature=0, max_tokens=3000, **reasoning)
     emb = embedding_factory("openai", "bge-m3", client=client)
     faith, relevancy = Faithfulness(llm=llm), AnswerRelevancy(llm=llm, embeddings=emb)
 
