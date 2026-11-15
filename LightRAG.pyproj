@@ -37,12 +37,42 @@
     <Content Include=".gitignore" />
     <Content Include="CLAUDE.md" />
     <Content Include="COMP4330_Group5_LightRAG.ipynb" />
+    <Content Include="data\dsh-smoke\questions.jsonl" />
+    <Content Include="data\smoke\questions.jsonl" />
     <Content Include="dsh-judge.patch.yml" />
     <Content Include="judge.Modelfile" />
     <Content Include="judge-qwen3.5-9b.Modelfile" />
     <Content Include="PLAN.md" />
     <Content Include="README.md" />
     <Content Include="requirements.txt" />
+    <Content Include="results\dsh-smoke\exp1_index_cost.json" />
+    <Content Include="results\dsh-smoke\exp1_lightrag.jsonl" />
+    <Content Include="results\dsh-smoke\exp1_naive.jsonl" />
+    <Content Include="results\dsh-smoke\exp3_global.jsonl" />
+    <Content Include="results\dsh-smoke\exp3_hybrid.jsonl" />
+    <Content Include="results\dsh-smoke\exp3_local.jsonl" />
+    <Content Include="results\dsh-smoke\exp3_mix.jsonl" />
+    <Content Include="results\dsh-smoke\exp3_naive.jsonl" />
+    <Content Include="results\dsh-smoke\judge_deepseek-flash\exp2_scores.jsonl" />
+    <Content Include="results\dsh-smoke\judge_deepseek-flash\exp2_summary.csv" />
+    <Content Include="results\dsh-smoke\judge_deepseek-flash\exp3_scores.jsonl" />
+    <Content Include="results\dsh-smoke\judge_deepseek-flash\exp3_summary.csv" />
+    <Content Include="results\dsh-smoke\judge_deepseek-flash\scores.jsonl" />
+    <Content Include="results\dsh-smoke\judge_deepseek-flash\scores_passA.jsonl" />
+    <Content Include="results\dsh-smoke\judge_deepseek-flash\scores_passB.jsonl" />
+    <Content Include="results\dsh-smoke\judge_deepseek-flash\summary.csv" />
+    <Content Include="results\dsh-smoke\scores.jsonl" />
+    <Content Include="results\dsh-smoke\share\exp1_summary.csv" />
+    <Content Include="results\dsh-smoke\share\exp2_summary.csv" />
+    <Content Include="results\dsh-smoke\share\exp3_summary.csv" />
+    <Content Include="results\dsh-smoke\summary.csv" />
+    <Content Include="results\smoke\exp1_index_cost.json" />
+    <Content Include="results\smoke\exp1_lightrag.jsonl" />
+    <Content Include="results\smoke\exp1_naive.jsonl" />
+    <Content Include="results\smoke\judge_deepseek-flash\scores.jsonl" />
+    <Content Include="results\smoke\judge_deepseek-flash\summary.csv" />
+    <Content Include="results\smoke\scores.jsonl" />
+    <Content Include="results\smoke\summary.csv" />
     <Content Include="share\DATA_NOTES.md" />
     <Content Include="share\exp1_summary.csv" />
     <Content Include="share\exp2_summary.csv" />
@@ -51,6 +81,15 @@
     <Content Include="share\run_info.json" />
   </ItemGroup>
   <ItemGroup>
+    <Folder Include="data\" />
+    <Folder Include="data\dsh-smoke\" />
+    <Folder Include="data\smoke\" />
+    <Folder Include="results\" />
+    <Folder Include="results\dsh-smoke\" />
+    <Folder Include="results\dsh-smoke\judge_deepseek-flash\" />
+    <Folder Include="results\dsh-smoke\share\" />
+    <Folder Include="results\smoke\" />
+    <Folder Include="results\smoke\judge_deepseek-flash\" />
     <Folder Include="share\" />
   </ItemGroup>
   <ItemGroup>

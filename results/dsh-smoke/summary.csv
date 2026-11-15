@@ -1,0 +1,3 @@
+file,n,hit,ndcg,faithfulness,answer_relevancy,token_f1,prompt_tokens,completion_tokens,llm_calls,latency_s
+results\dsh-smoke\exp1_naive.jsonl,2,1.0,1.0,1.0,0.932,0.294,4708.0,174.0,1.0,18.125
+results\dsh-smoke\exp1_lightrag.jsonl,2,1.0,1.0,0.932,0.834,0.196,12431.5,545.5,2.0,69.165

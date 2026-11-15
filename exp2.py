@@ -18,8 +18,10 @@ import time
 
 from lightrag import QueryParam
 
-from config import CHUNK_SIZE, CORPUS, JUDGE_DIR, QUESTIONS, RESULTS
+from config import CHUNK_SIZE, CORPUS, JUDGE_DIR, LLM_MODEL, QUESTIONS, RESULTS
+from evaluate import model_columns
 from exp3 import METRICS, answer, append, judges, load_jsonl, score_record
+from judge_setup import judging_complete, save_score
 from lightrag_setup import TRACKER, make_rag
 
 SETTINGS = [(600, 20), (600, 40), (1200, 20), (1200, 40)]
@@ -72,7 +74,8 @@ async def run(limit):
                 if q["qid"] in done:
                     continue
                 res = await answer(rag, q["question"], "mix", top_k=k)
-                append(out, {**q, "system": system(cs, k), "chunk_size": cs, "top_k": k, **res})
+                append(out, {**q, "system": system(cs, k), "chunk_size": cs, "top_k": k,
+                             "rag_model": LLM_MODEL, **res})
                 print(f"[c{cs} k{k}] {i + 1}/{len(questions)} {q['qid']} {res['latency_s']}s", flush=True)
         await rag.finalize_storages()
 
@@ -80,7 +83,7 @@ async def run(limit):
 async def score():
     faith, relevancy = judges()
     reused = {s["qid"]: s for s in load_jsonl(JUDGE_DIR / "exp3_scores.jsonl") if s["system"] == "lightrag-mix"}
-    done = {(s["chunk_size"], s["top_k"], s["qid"]) for s in load_jsonl(SCORES)}
+    done = {(s["chunk_size"], s["top_k"], s["qid"]): s for s in load_jsonl(SCORES)}
     for cs, k in SETTINGS:
         records = load_jsonl(answers_path(cs, k))
         if not records:
@@ -89,10 +92,19 @@ async def score():
         kv = json.loads((index_dir(cs) / "kv_store_text_chunks.json").read_text(encoding="utf-8"))
         n_chunks = collections.Counter(c["file_path"].removesuffix(".txt") for c in kv.values())
         for i, rec in enumerate(records):
-            if (cs, k, rec["qid"]) in done:
+            previous = done.get((cs, k, rec["qid"]))
+            if (cs, k) == DEFAULT:
+                # The default cell mirrors Exp 3's mix score; it is copied again whenever that score has changed
+                # (for example after Exp 3 was topped up with more judgings), so the two never disagree.
+                s = {**reused[rec["qid"]], "system": system(cs, k), "chunk_size": cs, "top_k": k}
+                if s == previous:
+                    continue
+            elif judging_complete(previous):
                 continue
-            s = reused[rec["qid"]] if (cs, k) == DEFAULT else await score_record(rec, faith, relevancy, n_chunks)
-            append(SCORES, {**s, "system": system(cs, k), "chunk_size": cs, "top_k": k})
+            else:
+                s = {**await score_record(rec, faith, relevancy, n_chunks, previous), "system": system(cs, k),
+                     "chunk_size": cs, "top_k": k}
+            save_score(SCORES, s, ("chunk_size", "top_k", "qid"))
             print(f"[c{cs} k{k}] {i + 1}/{len(records)} faith={s['faithfulness']} rel={s['answer_relevancy']}",
                   flush=True)
     summarize()
@@ -103,12 +115,12 @@ def summarize():
     rows = []
     for cs, k in SETTINGS:
         group = [s for s in scores if (s["chunk_size"], s["top_k"]) == (cs, k)]
-        row = {"chunk_size": cs, "top_k": k, "n": len(group)}
+        row = {"chunk_size": cs, "top_k": k, "n": len(group), **model_columns(group)}
         for m in METRICS:
             vals = [s[m] for s in group if s.get(m) is not None]
             row[m] = round(sum(vals) / len(vals), 3) if vals else None
         rows.append(row)
-    cols = ["chunk_size", "top_k", "n", *METRICS]
+    cols = ["chunk_size", "top_k", "n", "rag_model", "judge_model", *METRICS]
     with (JUDGE_DIR / "exp2_summary.csv").open("w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=cols)
         w.writeheader()

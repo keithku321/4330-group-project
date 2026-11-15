@@ -18,9 +18,9 @@ import time
 from lightrag import QueryParam
 from lightrag.operate import get_keywords_from_query
 
-from config import JUDGE_DIR, MAX_CONTEXT_TOKENS, QUESTIONS, RESULTS
-from evaluate import ndcg, strip_references, token_f1
-from judge_setup import JudgeUnavailableError, judge_label, make_judges
+from config import JUDGE_DIR, LLM_MODEL, MAX_CONTEXT_TOKENS, QUESTIONS, RESULTS
+from evaluate import model_columns, ndcg, rag_model, strip_references, token_f1
+from judge_setup import judge_answer, judging_complete, make_judges, save_score
 from lightrag_setup import TRACKER, make_rag
 
 MODES = ["naive", "local", "global", "hybrid", "mix"]
@@ -78,7 +78,8 @@ async def run(limit):
         for i, q in enumerate(questions):
             if q["qid"] in done:
                 continue
-            append(out, {**q, "system": f"lightrag-{mode}", **await answer(rag, q["question"], mode)})
+            append(out, {**q, "system": f"lightrag-{mode}", "rag_model": LLM_MODEL,
+                         **await answer(rag, q["question"], mode)})
             print(f"[{mode}] {i + 1}/{len(questions)} {q['qid']}", flush=True)
     await rag.finalize_storages()
 
@@ -91,42 +92,34 @@ def judges():
     return make_judges()
 
 
-# Scores one answer: retrieval and token-F1 metrics locally, then both RAGAS metrics, each labelled for the DSH session
-# list. An unusable judge (JudgeUnavailableError) stops the run; any other judge failure stores None for that metric.
-async def score_record(rec, faith, relevancy, n_chunks):
+# Scores one answer: retrieval and token-F1 metrics locally, then both RAGAS metrics, each the mean of JUDGE_REPEATS
+# judgings (judge_setup.judge_answer), topping up the judgings already cached in previous. An unusable judge
+# (JudgeUnavailableError) stops the run; any other judge failure loses only that judging.
+async def score_record(rec, faith, relevancy, n_chunks, previous=None):
     ans = strip_references(rec["answer"])
-    s = {"system": rec["system"], "qid": rec["qid"],
-         "hit": float(rec["doc_id"] in rec["retrieved_doc_ids"]),
-         "ndcg": ndcg(rec["retrieved_doc_ids"], rec["doc_id"], n_chunks[rec["doc_id"]]),
-         "token_f1": token_f1(ans, rec["answers"]),
-         **{k: rec[k] for k in ("n_entities", "n_relations", "prompt_tokens", "completion_tokens",
-                                "llm_calls", "latency_s")}}
-    for metric, score in [("faithfulness", lambda: faith.ascore(user_input=rec["question"], response=ans,
-                                                                retrieved_contexts=rec["contexts"] or [""])),
-                          ("answer_relevancy", lambda: relevancy.ascore(user_input=rec["question"], response=ans))]:
-        judge_label.set(f"{rec['system']} {rec['qid']} {metric}")
-        try:
-            s[metric] = (await score()).value
-        except JudgeUnavailableError:
-            raise
-        except Exception as e:  # one malformed judge reply loses one score, not the run
-            print(f"  {metric} failed for {rec['system']}/{rec['qid']}: {str(e)[:120]}")
-            s[metric] = None
-    return s
+    return {"system": rec["system"], "qid": rec["qid"], "rag_model": rag_model(rec),
+            "hit": float(rec["doc_id"] in rec["retrieved_doc_ids"]),
+            "ndcg": ndcg(rec["retrieved_doc_ids"], rec["doc_id"], n_chunks[rec["doc_id"]]),
+            "token_f1": token_f1(ans, rec["answers"]),
+            **{k: rec[k] for k in ("n_entities", "n_relations", "prompt_tokens", "completion_tokens",
+                                   "llm_calls", "latency_s")},
+            **await judge_answer(rec["question"], ans, rec["contexts"], faith, relevancy,
+                                 f"{rec['system']} {rec['qid']}", previous)}
 
 
 async def score():
     chunks = json.loads((RESULTS / "naive_index" / "chunks.json").read_text(encoding="utf-8"))
     n_chunks = collections.Counter(c["doc_id"] for c in chunks)
     faith, relevancy = judges()
-    done = {(s["system"], s["qid"]) for s in load_jsonl(SCORES)}
+    done = {(s["system"], s["qid"]): s for s in load_jsonl(SCORES)}
     for mode in MODES:
         records = load_jsonl(RESULTS / f"exp3_{mode}.jsonl")
         for i, rec in enumerate(records):
-            if (rec["system"], rec["qid"]) in done:
+            previous = done.get((rec["system"], rec["qid"]))
+            if judging_complete(previous):
                 continue
-            s = await score_record(rec, faith, relevancy, n_chunks)
-            append(SCORES, s)
+            s = await score_record(rec, faith, relevancy, n_chunks, previous)
+            save_score(SCORES, s, ("system", "qid"))
             print(f"[{rec['system']}] {i + 1}/{len(records)} faith={s['faithfulness']} rel={s['answer_relevancy']}",
                   flush=True)
     summarize()
@@ -137,18 +130,18 @@ def summarize():
     rows = []
     for mode in MODES:
         group = [s for s in scores if s["system"] == f"lightrag-{mode}"]
-        row = {"system": f"lightrag-{mode}", "n": len(group)}
+        row = {"system": f"lightrag-{mode}", "n": len(group), **model_columns(group)}
         for m in METRICS:
             vals = [s[m] for s in group if s.get(m) is not None]
             row[m] = round(sum(vals) / len(vals), 3) if vals else None
         rows.append(row)
     with (JUDGE_DIR / "exp3_summary.csv").open("w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=["system", "n", *METRICS])
+        w = csv.DictWriter(f, fieldnames=["system", "n", "rag_model", "judge_model", *METRICS])
         w.writeheader()
         w.writerows(rows)
-    print("| " + " | ".join(["system", "n", *METRICS]) + " |")
+    print("| " + " | ".join(["system", "n", "rag_model", "judge_model", *METRICS]) + " |")
     for r in rows:
-        print("| " + " | ".join(str(r[k]) for k in ["system", "n", *METRICS]) + " |")
+        print("| " + " | ".join(str(r[k]) for k in ["system", "n", "rag_model", "judge_model", *METRICS]) + " |")
 
 
 if __name__ == "__main__":

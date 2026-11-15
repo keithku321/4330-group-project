@@ -158,7 +158,7 @@ Notebook 會自動做以下嘢：
 - [ ] Context 由 LightRAG 預設 30k 減到 16k
 - [ ] Entity extraction 輸出上限 3000 tokens，多數 chunk 被截斷
 - [ ] 只用咗 20 篇文件（95k tokens）、46 條問題、跑一次
-- [ ] Judge 同答題用同一個 LLM（15/11 已改用第三方 judge：DeepSeek，經 DeepSeek Harness；`share/` 嘅數字仲未用新 judge 重新評分）
+- [ ] Judge 同答題用同一個 LLM，而且同一個答案評兩次分數都會變（slide 提出嘅問題）。15/11 喺 pipeline 已經解決：改用第三方 judge DeepSeek（經 DeepSeek Harness），消除自己評自己；每個分數係 3 次評分嘅平均（`LIGHTRAG_JUDGE_REPEATS`，3 至 5），並記錄分數差異，處理唔穩定嘅問題；結果檔案會寫明答題 model（`rag_model`）同 judge（`judge_model`）。剩低：`share/` 嘅數字仲未用新 judge 重新評分
 - [ ] hit rate / nDCG 係文件層面
 - [ ] 關閉咗 reranker
 - [ ] 本機 qwen2.5:14b 有 16/46 條問題抽唔到低層 keyword，實體層檢索冇起作用

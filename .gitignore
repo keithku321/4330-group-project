@@ -1,7 +1,20 @@
 .venv/
 __pycache__/
-results/
-data/
+
+# data/ and results/ are ignored except for the answers and scores (*.jsonl), the summaries (*summary*.csv) and
+# the index costs (*index_cost*.json), which are small and are what teammates need to see. The first line of each pair ignores everything below the
+# folder, and the "!.../" line lets git look inside sub-folders again so the exceptions can match. The raw
+# UltraDomain download is excluded again at the end: prep_data.py fetches it from Hugging Face on demand.
+data/**
+!data/**/
+!data/**/*.jsonl
+data/mix.jsonl
+results/**
+!results/**/
+!results/**/*.jsonl
+!results/**/*summary*.csv
+!results/**/*index_cost*.json
+
 *.log
 .vs/
 .claude/handoff/

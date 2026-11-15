@@ -2,9 +2,10 @@
 
     python -X utf8 evaluate.py results/exp1_naive.jsonl results/exp1_lightrag.jsonl [--limit N]
 
-Per answer (cached in <judge dir>/scores.jsonl, so reruns only score new answers):
+Per answer (cached in <judge dir>/scores.jsonl, so reruns only add missing answers and judgings):
   retrieval  hit rate, nDCG        doc-level: a retrieved chunk is relevant if it comes from the question's source doc
-  generation faithfulness, answer relevancy   RAGAS 0.4, judge from judge_setup.py (DeepSeek via DSH, or Ollama) + bge-m3
+  generation faithfulness, answer relevancy   RAGAS 0.4, judge from judge_setup.py (DeepSeek via DSH, or Ollama) + bge-m3,
+                                              each the mean of LIGHTRAG_JUDGE_REPEATS judgings (default 3)
              token F1 vs gold answer          SQuAD-style, cheap sanity check
   cost       prompt/completion tokens, LLM calls, latency (copied from the run)
 Prints a per-system summary and writes <judge dir>/summary.csv. The judge dir is config.JUDGE_DIR: results/ itself
@@ -19,8 +20,8 @@ import math
 import re
 import string
 
-from config import JUDGE_DIR, RESULTS
-from judge_setup import JudgeUnavailableError, judge_label, make_judges
+from config import JUDGE_DIR, LLM_MODEL, RESULTS
+from judge_setup import judge_answer, judging_complete, make_judges, save_score
 
 SCORES = JUDGE_DIR / "scores.jsonl"
 
@@ -52,23 +53,19 @@ def ndcg(retrieved_doc_ids, gold_doc, n_gold_chunks):
     return dcg / ideal if ideal else 0.0
 
 
-# Scores one answer with both RAGAS metrics. Each metric is labelled for the DSH session list before it runs. A judge
-# that is unusable (JudgeUnavailableError) stops the run; any other failure loses only that one score.
-async def ragas_scores(rec, faith, relevancy):
-    out = {}
-    for name, score in [("faithfulness", lambda: faith.ascore(user_input=rec["question"], response=rec["answer"],
-                                                              retrieved_contexts=rec["contexts"] or [""])),
-                        ("answer_relevancy", lambda: relevancy.ascore(user_input=rec["question"],
-                                                                      response=rec["answer"]))]:
-        judge_label.set(f"{rec['system']} {rec['qid']} {name}")
-        try:
-            out[name] = (await score()).value
-        except JudgeUnavailableError:
-            raise
-        except Exception as e:  # a malformed judge reply loses one score, not the whole run
-            print(f"  {name} failed for {rec['system']}/{rec['qid']}: {str(e)[:150]}")
-            out[name] = None
-    return out
+# Returns the model that wrote an answer record (its rag_model field, set when the answer is generated). Answers
+# written before records named their model fall back to the configured LLM, the same assumption run_info.json makes,
+# so score such answers with the models that produced them.
+def rag_model(rec):
+    return rec.get("rag_model") or LLM_MODEL
+
+
+# The two model columns of a summary row: which model answered and which judged the scores in the group, joined with
+# "; " if a group ever mixes several, so a mixed group is visible instead of silently averaged. "unrecorded" marks a
+# score cached before score records named their models.
+def model_columns(group):
+    return {column: "; ".join(sorted({s.get(column) or "unrecorded" for s in group}))
+            for column in ("rag_model", "judge_model")}
 
 
 async def main(files, limit):
@@ -86,22 +83,24 @@ async def main(files, limit):
     for path in files:
         records = [json.loads(l) for l in open(path, encoding="utf-8")][:limit]
         for i, rec in enumerate(records):
-            if (path, rec["qid"]) in done:
+            # An answer is skipped only when it already has every judging; otherwise the missing ones are added.
+            previous = done.get((path, rec["qid"]))
+            if judging_complete(previous):
                 continue
             rec["answer"] = strip_references(rec["answer"])
             score = {
-                "file": path, "qid": rec["qid"], "system": rec["system"],
+                "file": path, "qid": rec["qid"], "system": rec["system"], "rag_model": rag_model(rec),
                 "hit": float(rec["doc_id"] in rec["retrieved_doc_ids"]),
                 "ndcg": ndcg(rec["retrieved_doc_ids"], rec["doc_id"], n_chunks[rec["doc_id"]]),
                 "token_f1": token_f1(rec["answer"], rec["answers"]),
-                **await ragas_scores(rec, faith, relevancy),
+                **await judge_answer(rec["question"], rec["answer"], rec["contexts"], faith, relevancy,
+                                     f"{rec['system']} {rec['qid']}", previous),
                 **{k: rec[k] for k in ("prompt_tokens", "completion_tokens", "llm_calls", "latency_s")},
             }
             done[(path, rec["qid"])] = score
-            with SCORES.open("a", encoding="utf-8") as f:
-                f.write(json.dumps(score) + "\n")
-            print(f"[{path}] {i + 1}/{len(records)} {rec['qid']} "
-                  f"faith={score['faithfulness']} rel={score['answer_relevancy']} hit={score['hit']}")
+            save_score(SCORES, score, ("file", "qid"))
+            print(f"[{path}] {i + 1}/{len(records)} {rec['qid']} faith={score['faithfulness']} "
+                  f"(sd {score['faithfulness_sd']}) rel={score['answer_relevancy']} hit={score['hit']}")
 
     summarize([s for s in done.values() if s["file"] in files])
 
@@ -112,19 +111,20 @@ def summarize(scores):
     rows = []
     for f in dict.fromkeys(s["file"] for s in scores):
         group = [s for s in scores if s["file"] == f]
-        row = {"file": f, "n": len(group)}
+        row = {"file": f, "n": len(group), **model_columns(group)}
         for m in metrics:
             vals = [s[m] for s in group if s[m] is not None]
             row[m] = round(sum(vals) / len(vals), 3) if vals else None
         rows.append(row)
+    columns = ["file", "n", "rag_model", "judge_model", *metrics]
     with (JUDGE_DIR / "summary.csv").open("w", newline="", encoding="utf-8") as fh:
-        w = csv.DictWriter(fh, fieldnames=["file", "n", *metrics])
+        w = csv.DictWriter(fh, fieldnames=columns)
         w.writeheader()
         w.writerows(rows)
-    print("\n| " + " | ".join(["file", "n", *metrics]) + " |")
-    print("|" + "---|" * (len(metrics) + 2))
+    print("\n| " + " | ".join(columns) + " |")
+    print("|" + "---|" * len(columns))
     for r in rows:
-        print("| " + " | ".join(str(r[k]) for k in ["file", "n", *metrics]) + " |")
+        print("| " + " | ".join(str(r[k]) for k in columns) + " |")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,2 @@
+file,n,hit,ndcg,faithfulness,answer_relevancy,token_f1,prompt_tokens,completion_tokens,llm_calls,latency_s
+results\smoke\exp1_naive.jsonl,1,1.0,1.0,0.667,0.928,0.328,4705.0,176.0,1.0,20.12

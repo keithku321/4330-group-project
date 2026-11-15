@@ -1,0 +1,1 @@
+{"file": "results\\smoke\\exp1_naive.jsonl", "qid": "q030", "system": "naive", "hit": 1.0, "ndcg": 1.0, "token_f1": 0.3276836158192091, "faithfulness": 0.6666666666666666, "answer_relevancy": 0.9281354951204118, "prompt_tokens": 4705, "completion_tokens": 176, "llm_calls": 1, "latency_s": 20.12}

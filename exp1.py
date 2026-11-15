@@ -10,7 +10,7 @@ import time
 
 from lightrag import QueryParam
 
-from config import CORPUS, MAX_CONTEXT_TOKENS, QUESTIONS, RESULTS
+from config import CORPUS, LLM_MODEL, MAX_CONTEXT_TOKENS, QUESTIONS, RESULTS
 from lightrag_setup import TRACKER, make_rag
 from naive_rag import NaiveRAG
 
@@ -67,7 +67,8 @@ async def run(limit):
                 continue
             res = await answer(q["question"])
             with out.open("a", encoding="utf-8") as f:
-                f.write(json.dumps({**q, "system": name, **res}, ensure_ascii=False) + "\n")
+                # rag_model names the model that wrote this answer, so later files can show it beside the judge
+                f.write(json.dumps({**q, "system": name, "rag_model": LLM_MODEL, **res}, ensure_ascii=False) + "\n")
             print(f"[{name}] {i + 1}/{len(questions)} {q['qid']} {res['latency_s']}s")
     await rag.finalize_storages()
 

@@ -10,12 +10,14 @@ config.JUDGE_BACKEND picks the judge LLM:
                       disk (grouped under config.JUDGE_DIR) but the desktop app does not list it.
   ollama  the original local judge (qwen2.5-14b-judge, or the qwen3.5-9b-judge fallback) through Ollama's /v1 API.
 The answer-relevancy embeddings stay on local bge-m3 for both backends; only the judging LLM changes.
+Every score is the mean of config.JUDGE_REPEATS judgings (judge_answer); the score caches keep each judging.
 """
 import asyncio
 import contextvars
 import json
 import os
 import re
+import statistics
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -224,3 +226,86 @@ def make_judges():
     print(f"[judge] {C.JUDGE_NAME}; scores in {C.JUDGE_DIR}", flush=True)
     embeddings = embedding_factory("openai", "bge-m3", client=client)
     return Faithfulness(llm=llm), AnswerRelevancy(llm=llm, embeddings=embeddings)
+
+
+### Repeated judging. One judging of the same answer is noisy (two DeepSeek judgings moved faithfulness by 0.155 on
+### average in the smoke test), so every RAGAS score is the mean of config.JUDGE_REPEATS independent judgings, each in
+### its own fresh judge session. A score record keeps the individual judgings (<metric>_runs) beside their mean, the
+### spread (<metric>_sd) and the number of judgings the mean was taken over (judge_repeats). The caches are therefore
+### resumable at the level of single judgings: a rerun, or a run with a higher repeat count, only adds the judgings
+### still missing, and a judging that failed is simply tried again next time.
+METRICS = ("faithfulness", "answer_relevancy")
+
+
+# Returns the successful judgings cached for one metric of a score record (an empty list for no record). A record
+# written before repeated judging has only the single value, which counts as its first judging, so old caches are
+# topped up rather than judged again from scratch.
+def cached_runs(record, metric):
+    if record is None:
+        return []
+    runs = record.get(f"{metric}_runs")
+    if runs is None:
+        runs = [record.get(metric)]
+    return [value for value in runs if value is not None]
+
+
+# True when a cached record needs no work: it names the current judge, every metric has at least JUDGE_REPEATS
+# judgings, and its stored mean was taken over exactly JUDGE_REPEATS of them. A record averaged under another repeat
+# count, or written before records named their judge, is recomputed, which costs judge calls only when it has too few
+# judgings.
+def judging_complete(record):
+    return (record is not None and record.get("judge_model") == C.JUDGE_MODEL_ID
+            and record.get("judge_repeats") == C.JUDGE_REPEATS
+            and all(len(cached_runs(record, metric)) >= C.JUDGE_REPEATS for metric in METRICS))
+
+
+# Judges one answer with both RAGAS metrics until each has JUDGE_REPEATS judgings, starting from those cached in
+# previous, and returns the judge fields of its score record. The mean uses the first JUDGE_REPEATS judgings, so every
+# answer in a comparison is averaged over the same number; extra cached judgings are kept but not used. Each session is
+# labelled "<label> <metric> <n>/<repeats>" for the DSH session list. An unusable judge (JudgeUnavailableError) stops
+# the run; any other failure loses only that judging, and a metric with no judging at all scores None, as before.
+async def judge_answer(question, answer, contexts, faith, relevancy, label, previous=None):
+    # Judgings by another judge model must never be averaged with this one's. That can only happen in the Ollama
+    # folder, which both Ollama judges share, so such a record is judged again from scratch rather than topped up.
+    if previous is not None and previous.get("judge_model") not in (None, C.JUDGE_MODEL_ID):
+        print(f"  {label}: cached judgings are by {previous['judge_model']}, not {C.JUDGE_MODEL_ID}; judging again")
+        previous = None
+    scorers = {"faithfulness": lambda: faith.ascore(user_input=question, response=answer,
+                                                    retrieved_contexts=contexts or [""]),
+               "answer_relevancy": lambda: relevancy.ascore(user_input=question, response=answer)}
+    fields = {}
+    for metric, score in scorers.items():
+        runs = cached_runs(previous, metric)
+        for number in range(len(runs) + 1, C.JUDGE_REPEATS + 1):
+            judge_label.set(f"{label} {metric} {number}/{C.JUDGE_REPEATS}")
+            try:
+                runs.append((await score()).value)
+            except JudgeUnavailableError:
+                raise
+            except Exception as error:  # a malformed judge reply loses one judging, not the whole run
+                print(f"  {metric} judging {number} failed for {label}: {str(error)[:150]}")
+        used = runs[:C.JUDGE_REPEATS]
+        fields[metric] = statistics.fmean(used) if used else None
+        fields[f"{metric}_sd"] = statistics.stdev(used) if len(used) > 1 else None
+        fields[f"{metric}_runs"] = runs
+    fields["judge_model"], fields["judge_repeats"] = C.JUDGE_MODEL_ID, C.JUDGE_REPEATS
+    return fields
+
+
+# Writes one score record to a JSONL cache, replacing the line with the same key (a topped-up record) in place or
+# appending a new one. A replacement rewrites the file through a temporary copy, so an interrupted run never leaves a
+# half-written cache, and every reader keeps seeing one line per answer.
+def save_score(path, record, key_fields):
+    key = tuple(record[field] for field in key_fields)
+    lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+    records = [json.loads(line) for line in lines if line.strip()]
+    position = next((index for index, old in enumerate(records)
+                     if tuple(old.get(field) for field in key_fields) == key), None)
+    if position is None:
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+        return
+    records[position] = record
+    temporary = path.with_name(path.name + ".tmp")
+    temporary.write_text("".join(json.dumps(old, ensure_ascii=False) + "\n" for old in records), encoding="utf-8")
+    os.replace(temporary, path)

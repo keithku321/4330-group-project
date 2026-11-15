@@ -139,17 +139,38 @@ THINK = _read_think_setting(LLM_IS_FALLBACK)
 # Only the Ollama judge takes this switch; DeepSeek's thinking is set through DSH_JUDGE_EFFORT instead.
 JUDGE_THINK = _read_think_setting(JUDGE_IS_FALLBACK) if JUDGE_BACKEND == "ollama" else None
 
+
+# Reads LIGHTRAG_JUDGE_REPEATS: how many independent judgings each RAGAS score averages (default 3). A smoke test
+# showed one DeepSeek judging of the same answer can move faithfulness by about 0.15, so 3 to 5 judgings are the
+# intended range; 1 restores the old single judging and is meant only for quick pipeline checks. The cap of 5 keeps a
+# full rescoring (460 answers, about 1.5 min per judging through DSH) within reach.
+def _read_judge_repeats():
+    value = os.environ.get("LIGHTRAG_JUDGE_REPEATS", "").strip() or "3"
+    if not value.isdigit() or not 1 <= int(value) <= 5:
+        raise ValueError(f"LIGHTRAG_JUDGE_REPEATS must be a whole number from 1 to 5 (3 to 5 for real runs), "
+                         f"not {value!r}")
+    return int(value)
+
+
+JUDGE_REPEATS = _read_judge_repeats()
+
 # A readable judge name for logs and share/run_info.json, and the folder that holds this judge's score caches
 # (scores.jsonl, exp2/exp3_scores.jsonl) and summaries. The Ollama judge keeps the original location, RESULTS
 # itself, so the existing local scores stay where they are; a DeepSeek judge gets its own subfolder per model and
-# effort, because a different model or effort is a different judge.
+# effort, because a different model or effort is a different judge. The number of judgings is not part of the
+# folder: every cached score keeps its individual judgings, so a run with more repeats only adds the missing ones.
+# JUDGE_MODEL_ID is the short judge name written into every score record and exported file (judge_model column),
+# beside the answering model (rag_model), so each result says which model answered and which one judged.
 if JUDGE_BACKEND == "dsh":
     JUDGE_NAME = (f"{DSH_JUDGE_MODEL} via DeepSeek Harness ({DSH_TRANSPORT}, account), "
                   f"effort {DSH_JUDGE_EFFORT or 'default (high)'}")
     JUDGE_DIR = RESULTS / ("judge_" + DSH_JUDGE_MODEL + (f"_{DSH_JUDGE_EFFORT}" if DSH_JUDGE_EFFORT else ""))
+    JUDGE_MODEL_ID = DSH_JUDGE_MODEL + (f" (effort {DSH_JUDGE_EFFORT})" if DSH_JUDGE_EFFORT else "")
 else:
     JUDGE_NAME = f"{JUDGE_MODEL} via Ollama"
     JUDGE_DIR = RESULTS
+    JUDGE_MODEL_ID = JUDGE_MODEL
+JUDGE_NAME += f", mean of {JUDGE_REPEATS} judging{'s' if JUDGE_REPEATS > 1 else ''}"
 EMBED_MODEL = "bge-m3:latest"
 EMBED_DIM = 1024
 
