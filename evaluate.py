@@ -2,12 +2,13 @@
 
     python -X utf8 evaluate.py results/exp1_naive.jsonl results/exp1_lightrag.jsonl [--limit N]
 
-Per answer (cached in results/scores.jsonl, so reruns only score new answers):
+Per answer (cached in <judge dir>/scores.jsonl, so reruns only score new answers):
   retrieval  hit rate, nDCG        doc-level: a retrieved chunk is relevant if it comes from the question's source doc
-  generation faithfulness, answer relevancy   RAGAS 0.4, local qwen2.5:14b judge + bge-m3
+  generation faithfulness, answer relevancy   RAGAS 0.4, judge from judge_setup.py (DeepSeek via DSH, or Ollama) + bge-m3
              token F1 vs gold answer          SQuAD-style, cheap sanity check
   cost       prompt/completion tokens, LLM calls, latency (copied from the run)
-Prints a per-system summary and writes results/summary.csv.
+Prints a per-system summary and writes <judge dir>/summary.csv. The judge dir is config.JUDGE_DIR: results/ itself
+for the Ollama judge, results/judge_<model>/ for a DeepSeek judge, so the two judges' caches never mix.
 """
 import argparse
 import asyncio
@@ -18,16 +19,10 @@ import math
 import re
 import string
 
-from openai import AsyncOpenAI
-from ragas.embeddings import embedding_factory
-from ragas.llms import llm_factory
-from ragas.metrics.collections import AnswerRelevancy, Faithfulness
+from config import JUDGE_DIR, RESULTS
+from judge_setup import JudgeUnavailableError, judge_label, make_judges
 
-# The judge is chosen in config.py: qwen2.5-14b-judge (judge.Modelfile) when installed, otherwise
-# qwen3.5-9b-judge (judge-qwen3.5-9b.Modelfile); LIGHTRAG_JUDGE_MODEL overrides both.
-from config import JUDGE_MODEL, JUDGE_THINK, OLLAMA_HOST, RESULTS
-
-SCORES = RESULTS / "scores.jsonl"
+SCORES = JUDGE_DIR / "scores.jsonl"
 
 
 def strip_references(answer):
@@ -57,13 +52,19 @@ def ndcg(retrieved_doc_ids, gold_doc, n_gold_chunks):
     return dcg / ideal if ideal else 0.0
 
 
+# Scores one answer with both RAGAS metrics. Each metric is labelled for the DSH session list before it runs. A judge
+# that is unusable (JudgeUnavailableError) stops the run; any other failure loses only that one score.
 async def ragas_scores(rec, faith, relevancy):
     out = {}
-    for name, coro in [("faithfulness", faith.ascore(user_input=rec["question"], response=rec["answer"],
-                                                     retrieved_contexts=rec["contexts"] or [""])),
-                       ("answer_relevancy", relevancy.ascore(user_input=rec["question"], response=rec["answer"]))]:
+    for name, score in [("faithfulness", lambda: faith.ascore(user_input=rec["question"], response=rec["answer"],
+                                                              retrieved_contexts=rec["contexts"] or [""])),
+                        ("answer_relevancy", lambda: relevancy.ascore(user_input=rec["question"],
+                                                                      response=rec["answer"]))]:
+        judge_label.set(f"{rec['system']} {rec['qid']} {name}")
         try:
-            out[name] = (await coro).value
+            out[name] = (await score()).value
+        except JudgeUnavailableError:
+            raise
         except Exception as e:  # a malformed judge reply loses one score, not the whole run
             print(f"  {name} failed for {rec['system']}/{rec['qid']}: {str(e)[:150]}")
             out[name] = None
@@ -73,14 +74,8 @@ async def ragas_scores(rec, faith, relevancy):
 async def main(files, limit):
     chunks = json.loads((RESULTS / "naive_index" / "chunks.json").read_text(encoding="utf-8"))
     n_chunks = collections.Counter(c["doc_id"] for c in chunks)
-
-    client = AsyncOpenAI(base_url=f"{OLLAMA_HOST}/v1", api_key="ollama")  # Ollama ignores the key
-    # Ollama's OpenAI-compatible API cannot take think=, but it maps reasoning_effort="none" to thinking off;
-    # nothing is sent when JUDGE_THINK is None, so the original qwen2.5 judge receives the original request.
-    reasoning = {} if JUDGE_THINK is None else {"reasoning_effort": "medium" if JUDGE_THINK else "none"}
-    llm = llm_factory(JUDGE_MODEL, client=client, temperature=0, max_tokens=3000, **reasoning)
-    emb = embedding_factory("openai", "bge-m3", client=client)
-    faith, relevancy = Faithfulness(llm=llm), AnswerRelevancy(llm=llm, embeddings=emb)
+    faith, relevancy = make_judges()
+    JUDGE_DIR.mkdir(parents=True, exist_ok=True)
 
     done = {}
     if SCORES.exists():
@@ -122,7 +117,7 @@ def summarize(scores):
             vals = [s[m] for s in group if s[m] is not None]
             row[m] = round(sum(vals) / len(vals), 3) if vals else None
         rows.append(row)
-    with (RESULTS / "summary.csv").open("w", newline="", encoding="utf-8") as fh:
+    with (JUDGE_DIR / "summary.csv").open("w", newline="", encoding="utf-8") as fh:
         w = csv.DictWriter(fh, fieldnames=["file", "n", *metrics])
         w.writeheader()
         w.writerows(rows)

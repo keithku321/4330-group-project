@@ -1,11 +1,12 @@
 """Experiment 3 (local): LightRAG query modes naive / local / global / hybrid / mix on the existing index.
 
     python -X utf8 exp3.py run [--limit N]   # answer with every mode -> results/exp3_<mode>.jsonl (resumable)
-    python -X utf8 exp3.py score             # judge + metrics -> results/exp3_scores.jsonl, exp3_summary.csv (resumable)
+    python -X utf8 exp3.py score             # judge + metrics -> <judge dir>/exp3_scores.jsonl, exp3_summary.csv (resumable)
 
 Same index, questions, LLM and settings as Exp 1. `mix` is rerun here (not copied from Exp 1) so that every mode's
 faithfulness is judged against the same kind of context: chunk text AND entity/relation descriptions.
-Run `run` first and `score` afterwards: the judge model and the answer model must not share the GPU at the same time.
+Run `run` first and `score` afterwards: the answer model and the judge's embeddings (and the Ollama judge, if used)
+must not share the GPU at the same time. <judge dir> is config.JUDGE_DIR (see judge_setup.py).
 """
 import argparse
 import asyncio
@@ -16,17 +17,14 @@ import time
 
 from lightrag import QueryParam
 from lightrag.operate import get_keywords_from_query
-from openai import AsyncOpenAI
-from ragas.embeddings import embedding_factory
-from ragas.llms import llm_factory
-from ragas.metrics.collections import AnswerRelevancy, Faithfulness
 
-from config import MAX_CONTEXT_TOKENS, OLLAMA_HOST, QUESTIONS, RESULTS
-from evaluate import JUDGE_MODEL, ndcg, strip_references, token_f1
+from config import JUDGE_DIR, MAX_CONTEXT_TOKENS, QUESTIONS, RESULTS
+from evaluate import ndcg, strip_references, token_f1
+from judge_setup import JudgeUnavailableError, judge_label, make_judges
 from lightrag_setup import TRACKER, make_rag
 
 MODES = ["naive", "local", "global", "hybrid", "mix"]
-SCORES = RESULTS / "exp3_scores.jsonl"
+SCORES = JUDGE_DIR / "exp3_scores.jsonl"
 METRICS = ["hit", "ndcg", "faithfulness", "answer_relevancy", "token_f1", "n_entities", "n_relations",
            "prompt_tokens", "completion_tokens", "llm_calls", "latency_s"]
 
@@ -85,12 +83,16 @@ async def run(limit):
     await rag.finalize_storages()
 
 
+# Builds the RAGAS faithfulness and answer-relevancy scorers (shared with exp2.py). The judge itself, DeepSeek through
+# DeepSeek Harness or the local Ollama judge, is chosen in config.py and built by judge_setup.make_judges, the same
+# function evaluate.py uses, so all three experiments are scored by one judge.
 def judges():
-    client = AsyncOpenAI(base_url=f"{OLLAMA_HOST}/v1", api_key="ollama")
-    llm = llm_factory(JUDGE_MODEL, client=client, temperature=0, max_tokens=3000)
-    return Faithfulness(llm=llm), AnswerRelevancy(llm=llm, embeddings=embedding_factory("openai", "bge-m3", client=client))
+    JUDGE_DIR.mkdir(parents=True, exist_ok=True)
+    return make_judges()
 
 
+# Scores one answer: retrieval and token-F1 metrics locally, then both RAGAS metrics, each labelled for the DSH session
+# list. An unusable judge (JudgeUnavailableError) stops the run; any other judge failure stores None for that metric.
 async def score_record(rec, faith, relevancy, n_chunks):
     ans = strip_references(rec["answer"])
     s = {"system": rec["system"], "qid": rec["qid"],
@@ -99,11 +101,14 @@ async def score_record(rec, faith, relevancy, n_chunks):
          "token_f1": token_f1(ans, rec["answers"]),
          **{k: rec[k] for k in ("n_entities", "n_relations", "prompt_tokens", "completion_tokens",
                                 "llm_calls", "latency_s")}}
-    for metric, coro in [("faithfulness", faith.ascore(user_input=rec["question"], response=ans,
-                                                     retrieved_contexts=rec["contexts"] or [""])),
-                         ("answer_relevancy", relevancy.ascore(user_input=rec["question"], response=ans))]:
+    for metric, score in [("faithfulness", lambda: faith.ascore(user_input=rec["question"], response=ans,
+                                                                retrieved_contexts=rec["contexts"] or [""])),
+                          ("answer_relevancy", lambda: relevancy.ascore(user_input=rec["question"], response=ans))]:
+        judge_label.set(f"{rec['system']} {rec['qid']} {metric}")
         try:
-            s[metric] = (await coro).value
+            s[metric] = (await score()).value
+        except JudgeUnavailableError:
+            raise
         except Exception as e:  # one malformed judge reply loses one score, not the run
             print(f"  {metric} failed for {rec['system']}/{rec['qid']}: {str(e)[:120]}")
             s[metric] = None
@@ -137,7 +142,7 @@ def summarize():
             vals = [s[m] for s in group if s.get(m) is not None]
             row[m] = round(sum(vals) / len(vals), 3) if vals else None
         rows.append(row)
-    with (RESULTS / "exp3_summary.csv").open("w", newline="", encoding="utf-8") as f:
+    with (JUDGE_DIR / "exp3_summary.csv").open("w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=["system", "n", *METRICS])
         w.writeheader()
         w.writerows(rows)

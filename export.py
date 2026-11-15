@@ -5,6 +5,9 @@
 share/per_question.csv  one row per question x system, with the answer and every score
 share/run_info.json     models, settings, corpus size, index cost
 share/*_summary.csv     the per-system means printed by evaluate.py / exp2.py / exp3.py
+
+Scores are read from the configured judge's folder (config.JUDGE_DIR), so run export.py with the same judge settings
+as the scoring run. A LIGHTRAG_SUBSET run exports to results/<subset>/share/ and never overwrites the committed share/.
 """
 import csv
 import json
@@ -17,17 +20,19 @@ import config as C
 from exp2 import DEFAULT, SETTINGS, answers_path, system
 from exp3 import MODES, load_jsonl
 
-R, SHARE = C.RESULTS, C.ROOT / "share"
+# R holds the answers and index costs, J the scores and summaries of the configured judge (R itself for Ollama).
+R, J = C.RESULTS, C.JUDGE_DIR
+SHARE = C.RESULTS / "share" if C.SUBSET else C.ROOT / "share"
 QUESTIONS = load_jsonl(C.QUESTIONS)
 k_default = QueryParam().top_k
 
 # (experiment, answers file, score file, system name in the score file, mode label, chunk size, top-k)
-sources = [("exp1", R / "exp1_naive.jsonl", R / "scores.jsonl", "naive", "naive_rag", C.CHUNK_SIZE, C.NAIVE_TOP_K),
-           ("exp1", R / "exp1_lightrag.jsonl", R / "scores.jsonl", "lightrag", "lightrag-mix", C.CHUNK_SIZE, k_default)]
-sources += [("exp3", R / f"exp3_{m}.jsonl", R / "exp3_scores.jsonl", f"lightrag-{m}", f"lightrag-{m}", C.CHUNK_SIZE,
+sources = [("exp1", R / "exp1_naive.jsonl", J / "scores.jsonl", "naive", "naive_rag", C.CHUNK_SIZE, C.NAIVE_TOP_K),
+           ("exp1", R / "exp1_lightrag.jsonl", J / "scores.jsonl", "lightrag", "lightrag-mix", C.CHUNK_SIZE, k_default)]
+sources += [("exp3", R / f"exp3_{m}.jsonl", J / "exp3_scores.jsonl", f"lightrag-{m}", f"lightrag-{m}", C.CHUNK_SIZE,
              k_default) for m in MODES]
 # Exp 2's default setting is the Exp 3 mix run, already above
-sources += [("exp2", answers_path(cs, k), R / "exp2_scores.jsonl", system(cs, k), "lightrag-mix", cs, k)
+sources += [("exp2", answers_path(cs, k), J / "exp2_scores.jsonl", system(cs, k), "lightrag-mix", cs, k)
             for cs, k in SETTINGS if (cs, k) != DEFAULT]
 
 q_by_id = {q["qid"]: q for q in QUESTIONS}
@@ -46,6 +51,11 @@ for exp, answers, score_file, sys_name, mode, cs, k in sources:
                      "prompt_tokens": s["prompt_tokens"], "completion_tokens": s["completion_tokens"],
                      "llm_calls": s["llm_calls"], "latency_s": s["latency_s"],
                      "dataset": q_by_id[r["qid"]]["dataset"], "source_doc": r["doc_id"]})
+# With no scores in the configured judge's folder (e.g. the DeepSeek judge before any rescoring), stop before touching
+# share/, rather than truncating the committed per_question.csv and crashing on rows[0].
+if not rows:
+    raise SystemExit(f"No scored answers in {J} for judge '{C.JUDGE_NAME}'; nothing exported. Score first, or set "
+                     "LIGHTRAG_JUDGE_BACKEND to the judge that produced the scores.")
 SHARE.mkdir(exist_ok=True)
 with open(SHARE / "per_question.csv", "w", newline="", encoding="utf-8-sig") as f:
     w = csv.DictWriter(f, fieldnames=list(rows[0]))
@@ -60,10 +70,16 @@ def read_json(p):
 docs = sorted(C.CORPUS.glob("*.txt"))
 texts = [p.read_text(encoding="utf-8") for p in docs]
 enc = tiktoken.get_encoding("cl100k_base")
+# Records the models config.py actually resolved (primary, Qwen 3.5 fallback, DeepSeek judge or an environment
+# override) rather than fixed names, so a re-export after a fallback run cannot claim the qwen2.5 judge. The think
+# flags are None when nothing was sent (qwen2.5, or a DeepSeek judge, whose setting is judge_effort) and False when
+# thinking was switched off; they describe this export's configuration, so run export.py with the same models and
+# environment variables as the run that produced results/.
 run_info = {
-    "backend": "Ollama (local GPU)", "llm": C.LLM_MODEL, "llm_options": C.LLM_OPTIONS,
+    "backend": "Ollama (local GPU)", "llm": C.LLM_MODEL, "llm_options": C.LLM_OPTIONS, "llm_think": C.THINK,
     "embedding": C.EMBED_MODEL, "embedding_dim": C.EMBED_DIM,
-    "judge": "qwen2.5:14b, same model as the answers (RAGAS 0.4 faithfulness + answer relevancy)",
+    "judge": f"{C.JUDGE_NAME} (RAGAS 0.4 faithfulness + answer relevancy)", "judge_backend": C.JUDGE_BACKEND,
+    "judge_think": C.JUDGE_THINK, "judge_effort": C.DSH_JUDGE_EFFORT if C.JUDGE_BACKEND == "dsh" else None,
     "chunk_size": C.CHUNK_SIZE, "chunk_overlap": C.CHUNK_OVERLAP, "naive_top_k": C.NAIVE_TOP_K,
     "lightrag_top_k": k_default, "lightrag_chunk_top_k": QueryParam().chunk_top_k,
     "lightrag_max_context_tokens": C.MAX_CONTEXT_TOKENS, "reranker": False, "exp2_settings": SETTINGS,
@@ -76,8 +92,13 @@ run_info = {
     "keyword_diagnostic": read_json(R / "exp3_keyword_diagnostic.json"),
 }
 (SHARE / "run_info.json").write_text(json.dumps(run_info, indent=2))
+# A summary this judge has not produced yet is removed, so share/ never pairs one judge's run_info.json with another
+# judge's leftover summary.
 for name in ["summary.csv", "exp2_summary.csv", "exp3_summary.csv"]:
-    if (R / name).exists():
-        shutil.copy(R / name, SHARE / ("exp1_summary.csv" if name == "summary.csv" else name))
+    target = SHARE / ("exp1_summary.csv" if name == "summary.csv" else name)
+    if (J / name).exists():
+        shutil.copy(J / name, target)
+    else:
+        target.unlink(missing_ok=True)
 print(len(rows), "rows ->", SHARE / "per_question.csv")
 print(json.dumps(run_info, indent=2))

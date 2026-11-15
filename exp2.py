@@ -2,9 +2,10 @@
 
     python -X utf8 exp2.py index           # build the chunk-600 graph -> results/lightrag_index_c600 (slow, resumable)
     python -X utf8 exp2.py run [--limit N] # answer every setting -> results/exp2_c<chunk>_k<top_k>.jsonl (resumable)
-    python -X utf8 exp2.py score           # judge + metrics -> results/exp2_scores.jsonl, exp2_summary.csv (resumable)
+    python -X utf8 exp2.py score           # judge + metrics -> <judge dir>/exp2_scores.jsonl, exp2_summary.csv (resumable)
 
-Chunk 1200 / top-k 40 is LightRAG's default and is exactly the Exp 3 `mix` run, so its answers and scores are reused.
+Chunk 1200 / top-k 40 is LightRAG's default and is exactly the Exp 3 `mix` run, so its answers and scores are reused
+(the scores from the same judge's exp3_scores.jsonl; <judge dir> is config.JUDGE_DIR, see judge_setup.py).
 top_k is how many entities (low level) and relations (high level) LightRAG retrieves; chunk_top_k stays at 20.
 Run the steps one after another: indexing, answering and judging all use the same GPU.
 """
@@ -17,13 +18,13 @@ import time
 
 from lightrag import QueryParam
 
-from config import CHUNK_SIZE, CORPUS, QUESTIONS, RESULTS
+from config import CHUNK_SIZE, CORPUS, JUDGE_DIR, QUESTIONS, RESULTS
 from exp3 import METRICS, answer, append, judges, load_jsonl, score_record
 from lightrag_setup import TRACKER, make_rag
 
 SETTINGS = [(600, 20), (600, 40), (1200, 20), (1200, 40)]
 DEFAULT = (CHUNK_SIZE, QueryParam().top_k)
-SCORES = RESULTS / "exp2_scores.jsonl"
+SCORES = JUDGE_DIR / "exp2_scores.jsonl"
 assert DEFAULT in SETTINGS, DEFAULT
 
 
@@ -78,7 +79,7 @@ async def run(limit):
 
 async def score():
     faith, relevancy = judges()
-    reused = {s["qid"]: s for s in load_jsonl(RESULTS / "exp3_scores.jsonl") if s["system"] == "lightrag-mix"}
+    reused = {s["qid"]: s for s in load_jsonl(JUDGE_DIR / "exp3_scores.jsonl") if s["system"] == "lightrag-mix"}
     done = {(s["chunk_size"], s["top_k"], s["qid"]) for s in load_jsonl(SCORES)}
     for cs, k in SETTINGS:
         records = load_jsonl(answers_path(cs, k))
@@ -108,7 +109,7 @@ def summarize():
             row[m] = round(sum(vals) / len(vals), 3) if vals else None
         rows.append(row)
     cols = ["chunk_size", "top_k", "n", *METRICS]
-    with (RESULTS / "exp2_summary.csv").open("w", newline="", encoding="utf-8") as f:
+    with (JUDGE_DIR / "exp2_summary.csv").open("w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=cols)
         w.writeheader()
         w.writerows(rows)

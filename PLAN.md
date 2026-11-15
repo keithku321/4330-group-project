@@ -103,7 +103,7 @@ Notebook 會自動做以下嘢：
 - [ ] 準備預計問題：
   - 點解 LightRAG 輸咗？
   - 46 條題、跑一次，結果可唔可以信？
-  - Judge 同答題係同一個 model，公唔公平？
+  - Judge 同答題係同一個 model，公唔公平？（答：已改用 DeepSeek 做第三方 judge，見 README「Evaluation」）
   - 點解用 qwen2.5:14b 而唔係 Gemini API？
   - 你哋打算點樣改進？
   - hit rate / nDCG 點樣計？
@@ -158,7 +158,7 @@ Notebook 會自動做以下嘢：
 - [ ] Context 由 LightRAG 預設 30k 減到 16k
 - [ ] Entity extraction 輸出上限 3000 tokens，多數 chunk 被截斷
 - [ ] 只用咗 20 篇文件（95k tokens）、46 條問題、跑一次
-- [ ] Judge 同答題用同一個 LLM
+- [ ] Judge 同答題用同一個 LLM（15/11 已改用第三方 judge：DeepSeek，經 DeepSeek Harness；`share/` 嘅數字仲未用新 judge 重新評分）
 - [ ] hit rate / nDCG 係文件層面
 - [ ] 關閉咗 reranker
 - [ ] 本機 qwen2.5:14b 有 16/46 條問題抽唔到低層 keyword，實體層檢索冇起作用

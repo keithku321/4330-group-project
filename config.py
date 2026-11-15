@@ -58,10 +58,70 @@ def _choose_model(env_name, primary, fallback, installed):
     return primary, False
 
 
+### Judge backend. The RAGAS judge is a third-party model, DeepSeek, reached through the DeepSeek Harness (DSH)
+### desktop app's command-line interface and its signed-in account (judge_setup.py), so the judge is no longer the
+### model family that wrote the answers. If DSH is not installed, the local Ollama judge below is used instead, as
+### before. Each judge writes its scores to its own folder (JUDGE_DIR), so cached scores from two judges never mix.
+DSH_CLI = Path(os.environ.get("LIGHTRAG_DSH_CLI", "").strip() or Path(os.environ.get("LOCALAPPDATA", "")) / "Programs"
+               / "DeepSeek Harness" / "resources" / "runtime" / "cli" / "bin" / "dsh.cmd")
+DSH_JUDGE_MODEL = os.environ.get("LIGHTRAG_DSH_MODEL", "").strip() or "deepseek-flash"
+# None leaves DeepSeek's own default effort ("high"); DSH accepts off / low / high / max.
+DSH_JUDGE_EFFORT = os.environ.get("LIGHTRAG_DSH_EFFORT", "").strip() or None
+
+
+# Chooses "dsh" or "ollama" for the judge. LIGHTRAG_JUDGE_BACKEND always wins; otherwise DSH is used when its
+# command-line launcher exists, and a missing DSH falls back to Ollama with a [config] notice on stderr.
+def _choose_judge_backend():
+    explicit = os.environ.get("LIGHTRAG_JUDGE_BACKEND", "").strip().lower()
+    if explicit:
+        if explicit not in {"dsh", "ollama"}:
+            raise ValueError(f"LIGHTRAG_JUDGE_BACKEND must be 'dsh' or 'ollama', not {explicit!r}")
+        return explicit
+    if DSH_CLI.is_file():
+        return "dsh"
+    print(f"[config] DeepSeek Harness was not found at {DSH_CLI}; judging with the local Ollama judge instead.",
+          file=sys.stderr)
+    return "ollama"
+
+
+JUDGE_BACKEND = _choose_judge_backend()
+
+# How a DeepSeek judgement reaches DSH. "desktop": through the optional dsh-lightrag-judge plugin (kept outside this
+# repository, in github.com/Test-Plus-XD/DSH-Discord-AutoReply under lightrag-judge/) inside the
+# running desktop app, so each judgement appears live, thinking included, in this repository's DSH workspace.
+# "headless": a separate `dsh --profile headless` run per prompt, saved to disk but not shown in the app.
+DSH_PORT = int(os.environ.get("LIGHTRAG_DSH_PORT", "").strip() or 18791)
+
+
+# Chooses the DSH transport. LIGHTRAG_DSH_TRANSPORT always wins; otherwise "desktop" when the plugin's API answers
+# (the desktop app is open with the plugin installed), else "headless" with a [config] notice. Decide once per run
+# and keep it: both use the same persona, prompts, model and effort, but DSH frames the request slightly differently.
+def _choose_dsh_transport():
+    explicit = os.environ.get("LIGHTRAG_DSH_TRANSPORT", "").strip().lower()
+    if explicit:
+        if explicit not in {"desktop", "headless"}:
+            raise ValueError(f"LIGHTRAG_DSH_TRANSPORT must be 'desktop' or 'headless', not {explicit!r}")
+        return explicit
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{DSH_PORT}/status", timeout=2) as response:
+            if json.load(response).get("plugin") == "dsh-lightrag-judge":
+                return "desktop"
+    except (OSError, ValueError):
+        pass
+    # The plugin is optional (teammates may not have it), so this is information, not a warning.
+    print(f"[config] Judging through headless DSH (the optional desktop plugin, dsh-lightrag-judge, is not answering on "
+          f"port {DSH_PORT}, so judgements are not shown live in the app).", file=sys.stderr)
+    return "headless"
+
+
+DSH_TRANSPORT = _choose_dsh_transport() if JUDGE_BACKEND == "dsh" else None
+
 _INSTALLED = _installed_ollama_models()
 LLM_MODEL, LLM_IS_FALLBACK = _choose_model("LIGHTRAG_LLM_MODEL", PRIMARY_LLM_MODEL, FALLBACK_LLM_MODEL, _INSTALLED)
-JUDGE_MODEL, JUDGE_IS_FALLBACK = _choose_model("LIGHTRAG_JUDGE_MODEL", PRIMARY_JUDGE_MODEL, FALLBACK_JUDGE_MODEL,
-                                               _INSTALLED)
+# The Ollama judge model is resolved only when Ollama judges, so a DSH run prints no misleading judge-fallback notice.
+JUDGE_MODEL, JUDGE_IS_FALLBACK = (
+    _choose_model("LIGHTRAG_JUDGE_MODEL", PRIMARY_JUDGE_MODEL, FALLBACK_JUDGE_MODEL, _INSTALLED)
+    if JUDGE_BACKEND == "ollama" else (None, False))
 
 
 # Reads LIGHTRAG_THINK as a tri-state switch for reasoning models (Ollama's think= / OpenAI's reasoning_effort).
@@ -76,7 +136,20 @@ def _read_think_setting(is_fallback):
 
 
 THINK = _read_think_setting(LLM_IS_FALLBACK)
-JUDGE_THINK = _read_think_setting(JUDGE_IS_FALLBACK)
+# Only the Ollama judge takes this switch; DeepSeek's thinking is set through DSH_JUDGE_EFFORT instead.
+JUDGE_THINK = _read_think_setting(JUDGE_IS_FALLBACK) if JUDGE_BACKEND == "ollama" else None
+
+# A readable judge name for logs and share/run_info.json, and the folder that holds this judge's score caches
+# (scores.jsonl, exp2/exp3_scores.jsonl) and summaries. The Ollama judge keeps the original location, RESULTS
+# itself, so the existing local scores stay where they are; a DeepSeek judge gets its own subfolder per model and
+# effort, because a different model or effort is a different judge.
+if JUDGE_BACKEND == "dsh":
+    JUDGE_NAME = (f"{DSH_JUDGE_MODEL} via DeepSeek Harness ({DSH_TRANSPORT}, account), "
+                  f"effort {DSH_JUDGE_EFFORT or 'default (high)'}")
+    JUDGE_DIR = RESULTS / ("judge_" + DSH_JUDGE_MODEL + (f"_{DSH_JUDGE_EFFORT}" if DSH_JUDGE_EFFORT else ""))
+else:
+    JUDGE_NAME = f"{JUDGE_MODEL} via Ollama"
+    JUDGE_DIR = RESULTS
 EMBED_MODEL = "bge-m3:latest"
 EMBED_DIM = 1024
 

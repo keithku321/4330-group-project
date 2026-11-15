@@ -24,6 +24,10 @@
     <Compile Include="config.py" />
     <Compile Include="evaluate.py" />
     <Compile Include="exp1.py" />
+    <Compile Include="exp2.py" />
+    <Compile Include="exp3.py" />
+    <Compile Include="export.py" />
+    <Compile Include="judge_setup.py" />
     <Compile Include="lightrag_setup.py" />
     <Compile Include="LightRAG.py" />
     <Compile Include="naive_rag.py" />
@@ -33,10 +37,21 @@
     <Content Include=".gitignore" />
     <Content Include="CLAUDE.md" />
     <Content Include="COMP4330_Group5_LightRAG.ipynb" />
+    <Content Include="dsh-judge.patch.yml" />
     <Content Include="judge.Modelfile" />
     <Content Include="judge-qwen3.5-9b.Modelfile" />
+    <Content Include="PLAN.md" />
     <Content Include="README.md" />
     <Content Include="requirements.txt" />
+    <Content Include="share\DATA_NOTES.md" />
+    <Content Include="share\exp1_summary.csv" />
+    <Content Include="share\exp2_summary.csv" />
+    <Content Include="share\exp3_summary.csv" />
+    <Content Include="share\per_question.csv" />
+    <Content Include="share\run_info.json" />
+  </ItemGroup>
+  <ItemGroup>
+    <Folder Include="share\" />
   </ItemGroup>
   <ItemGroup>
     <Interpreter Include=".venv\">

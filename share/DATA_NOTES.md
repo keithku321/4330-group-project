@@ -76,7 +76,7 @@ Token F1 wins per question: naive 33, LightRAG 13. Faithfulness: naive ahead on 
 | Chunking (both systems) | 1200 tokens, overlap 100 |
 | Naive RAG | top-k = 8 chunks, cosine similarity, one LLM call |
 | LightRAG | v1.5.7, mode `mix`, top_k 40 (entities/relations), chunk_top_k 20, max context 12,000 tokens, reranker off, 1 gleaning pass |
-| Evaluation | RAGAS 0.4.3 faithfulness and answer relevancy, judge = same qwen2.5:14b |
+| Evaluation | RAGAS 0.4.3 faithfulness and answer relevancy, judge = same qwen2.5:14b (before the switch to the DeepSeek judge) |
 | Retrieval metrics | Document level: a retrieved chunk is relevant if it comes from the question's source document |
 
 ## Columns in `per_question.csv`
@@ -93,6 +93,6 @@ Token F1 wins per question: naive 33, LightRAG 13. Faithfulness: naive ahead on 
 2. **Entity-level retrieval was often missing.** For 16 of 46 questions qwen2.5:14b returned no low-level keywords (high-level ones were always present), so for those questions LightRAG's mix run used relation-level retrieval plus chunk search only.
 3. **Truncated extraction** means the knowledge graph is incomplete, which probably hurts LightRAG.
 4. **n = 46, one run, no repeated trials.** The small differences (answer relevancy 0.859 vs 0.834, nDCG 0.833 vs 0.821) should not be called significant.
-5. **Same model writes and judges the answers**, so RAGAS scores may be biased.
+5. **Same model writes and judges the answers**, so RAGAS scores may be biased. A repeat run also showed this judge is not consistent with itself (faithfulness differed on 22 of the 42 questions whose answers were word for word the same). The group has since switched the judge to a third-party model, DeepSeek through DeepSeek Harness (README, "Evaluation"). **The numbers in this folder have not been rescored with it yet**; once they are, `run_info.json` will name the DeepSeek judge, and the old and new scores must not be mixed.
 6. **Hit rate and nDCG are document level**, not passage level. Hit rate is high for both systems because the corpus has only 20 documents.
 7. **Index cost is a lower bound** (see above).

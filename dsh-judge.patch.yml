@@ -1,0 +1,81 @@
+# DeepSeek Harness (DSH) overlay for the RAGAS judge, passed as `dsh --profile headless --patch <this file>` by
+# judge_setup.py. It turns the headless coding agent into a plain, tool-less judge that answers through the
+# signed-in DeepSeek account of the DSH desktop app, so no API key is needed and every judgement is saved as a
+# DSH session that can be read in the desktop app (grouped under the judge's results folder).
+# Edit model and effort through LIGHTRAG_DSH_MODEL / LIGHTRAG_DSH_EFFORT rather than here.
+
+# Answers with the account provider (the desktop app's sign-in) instead of the API-key route headless defaults to.
+- id: agent-default-model
+  name: "@deepseek-ai/dsh-agent-default-model"
+  config:
+    provider: deepseek-account
+    model: !!js process.env.LIGHTRAG_DSH_MODEL || 'deepseek-flash'
+    reasoningEffort: !!js process.env.LIGHTRAG_DSH_EFFORT || undefined
+
+# The headless profile disables these three; the account provider needs them to read the stored sign-in.
+# desktopPlatform is otherwise only set for the profile named "desktop".
+- id: credentials
+  name: "@deepseek-ai/dsh-credentials-local"
+  disabled: false
+- id: authorization
+  name: "@deepseek-ai/dsh-authorization"
+  disabled: false
+- id: deepseek-account
+  name: "@deepseek-ai/dsh-deepseek-account-platform"
+  disabled: false
+  config:
+    desktopPlatform: win32
+
+# A judge persona instead of "You are a coding agent".
+- id: system-prompt
+  name: "@deepseek-ai/dsh-system-prompt"
+  config:
+    personaPrefix: >-
+      You are an impartial evaluation judge powered by the {{model}} model. Judge only from the text given in the
+      task, use no outside knowledge, and reply with exactly the JSON the task asks for.
+
+# Keep the working folder's CLAUDE.md / AGENTS.md out of the judge's context, and skip the extra LLM call that
+# titles each session (the title falls back to the task's first words, which judge_setup.py makes a label).
+- id: agent-instructions
+  disabled: true
+- id: session-title-llm
+  disabled: true
+
+# No tools: the judge must not read files, run commands, search the web or delegate. The tool mode is pinned to
+# native so a DSH_TOOLS_MODE set elsewhere cannot add DSH's code-execution (PTC) tool.
+- id: tools
+  name: "@deepseek-ai/dsh-tools"
+  config:
+    mode: native
+- id: plan-mode
+  disabled: true
+- id: tool-pwsh
+  disabled: true
+- id: tool-bash
+  disabled: true
+- id: tool-jobs
+  disabled: true
+- id: tool-fs
+  disabled: true
+- id: tool-fs-search
+  disabled: true
+- id: tool-skill
+  disabled: true
+- id: tool-subagent-control
+  disabled: true
+- id: tool-subagent-list-agents
+  disabled: true
+- id: tool-subagent
+  disabled: true
+- id: tool-subagent-fork
+  disabled: true
+- id: tool-workflow
+  disabled: true
+- id: tool-todo
+  disabled: true
+- id: tool-goal
+  disabled: true
+- id: tool-web
+  disabled: true
+- id: tool-working-directory
+  disabled: true
