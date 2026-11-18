@@ -1,7 +1,7 @@
 """Experiment 3 (local): LightRAG query modes naive / local / global / hybrid / mix on the existing index.
 
-    python -X utf8 exp3.py run [--limit N]   # answer with every mode -> results/exp3_<mode>.jsonl (resumable)
-    python -X utf8 exp3.py score             # judge + metrics -> <judge dir>/exp3_scores.jsonl, exp3_summary.csv (resumable)
+    python -X utf8 src/exp3.py run [--limit N]   # answer with every mode -> results/exp3_<mode>.jsonl (resumable)
+    python -X utf8 src/exp3.py score             # judge + metrics -> <judge dir>/exp3_scores.jsonl, exp3_summary.csv (resumable)
 
 Same index, questions, LLM and settings as Exp 1. `mix` is rerun here (not copied from Exp 1) so that every mode's
 faithfulness is judged against the same kind of context: chunk text AND entity/relation descriptions.

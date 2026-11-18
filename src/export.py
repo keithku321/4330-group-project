@@ -1,6 +1,6 @@
 """Collect the local results into share/ for the report and teammates (local twin of notebook section 10).
 
-    python -X utf8 export.py
+    python -X utf8 src/export.py
 
 share/per_question.csv  one row per question x system, with the answer, every score, the answering model (rag_model),
                         the judge (judge_model) and each RAGAS score's spread and number of judgings

@@ -1,6 +1,6 @@
 """Score experiment answers.
 
-    python -X utf8 evaluate.py results/exp1_naive.jsonl results/exp1_lightrag.jsonl [--limit N]
+    python -X utf8 src/evaluate.py results/exp1_naive.jsonl results/exp1_lightrag.jsonl [--limit N]
 
 Per answer (cached in <judge dir>/scores.jsonl, so reruns only add missing answers and judgings):
   retrieval  hit rate, nDCG        doc-level: a retrieved chunk is relevant if it comes from the question's source doc

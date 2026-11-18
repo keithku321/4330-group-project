@@ -1,7 +1,7 @@
 """Build the Exp corpus: a ~100k-token subset of UltraDomain mix.jsonl plus all its questions.
 
-    python prep_data.py                         # full experiment corpus (~100k tokens) -> data/
-    $env:LIGHTRAG_SUBSET='smoke'; python prep_data.py --target-tokens 5000   # tiny test corpus -> data/smoke/
+    python src/prep_data.py                         # full experiment corpus (~100k tokens) -> data/
+    $env:LIGHTRAG_SUBSET='smoke'; python src/prep_data.py --target-tokens 5000   # tiny test corpus -> data/smoke/
 """
 import argparse
 import hashlib

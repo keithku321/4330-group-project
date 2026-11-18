@@ -2,9 +2,32 @@
 
 COMP 4330SEF Advanced Programming and AI Algorithms, 2026 Autumn, P04 Group 5.
 
-This repository holds the code and the local results for the three experiments in our proposal: naive RAG vs LightRAG (Exp 1), chunk size and top-k (Exp 2), and LightRAG's five query modes (Exp 3). `COMP4330_Group5_LightRAG.ipynb` is the Google Colab version (GPT-4o-mini, as in the proposal); the `.py` scripts are the local version (qwen2.5:14b through Ollama). The two runs use different models, so do not mix their numbers.
+This repository holds the code and the local results for the three experiments in our proposal: naive RAG vs LightRAG (Exp 1), chunk size and top-k (Exp 2), and LightRAG's five query modes (Exp 3). `notebooks/COMP4330_Group5_LightRAG.ipynb` is the Google Colab version (GPT-4o-mini, as in the proposal); the `.py` scripts are the local version (qwen2.5:14b through Ollama). The two runs use different models, so do not mix their numbers.
 
 The collected local results are in [`share/`](share): `per_question.csv` (one row per question and system), `run_info.json` (models, settings, corpus, index cost), the per-experiment summaries and `DATA_NOTES.md`.
+
+## Project layout
+
+```
+.
+├── src/                  Python scripts (run from the repo root: .venv\Scripts\python -X utf8 src\exp1.py ...)
+│   ├── config.py         shared settings: models, paths, chunking, context budget
+│   ├── prep_data.py      builds the UltraDomain subset in data/
+│   ├── naive_rag.py      naive RAG baseline
+│   ├── lightrag_setup.py LightRAG on Ollama, with token tracking
+│   ├── judge_setup.py    RAGAS judge (DeepSeek through DSH, or Ollama)
+│   ├── evaluate.py       scoring for Exp 1
+│   ├── exp1.py exp2.py exp3.py   the three experiments
+│   └── export.py         collects results into share/
+├── configs/              Ollama judge Modelfiles and the DSH judge overlay
+├── notebooks/            Google Colab version of the whole pipeline
+├── docs/                 project plan and handover notes
+├── share/                exported results for the report (CSV, JSON, DATA_NOTES.md)
+├── data/                 corpus and questions (mostly git-ignored; prep_data.py rebuilds it)
+├── results/              answers, scores, indexes and logs (large files git-ignored)
+├── requirements.txt
+└── LightRAG.slnx / LightRAG.pyproj   Visual Studio project
+```
 
 ## Setup
 
@@ -41,10 +64,10 @@ Setting `LIGHTRAG_SUBSET` sends the corpus to `data/<name>/` and the results to 
 
 ```
 $env:LIGHTRAG_SUBSET = 'smoke'
-.venv\Scripts\python -X utf8 prep_data.py --target-tokens 5000
-.venv\Scripts\python -X utf8 exp1.py index
-.venv\Scripts\python -X utf8 exp1.py run --limit 2
-.venv\Scripts\python -X utf8 evaluate.py results\smoke\exp1_naive.jsonl results\smoke\exp1_lightrag.jsonl
+.venv\Scripts\python -X utf8 src\prep_data.py --target-tokens 5000
+.venv\Scripts\python -X utf8 src\exp1.py index
+.venv\Scripts\python -X utf8 src\exp1.py run --limit 2
+.venv\Scripts\python -X utf8 src\evaluate.py results\smoke\exp1_naive.jsonl results\smoke\exp1_lightrag.jsonl
 Remove-Item Env:LIGHTRAG_SUBSET
 ```
 
@@ -55,8 +78,8 @@ If you change the LLM, delete `results\<subset>\` before indexing again. Otherwi
 ## Experiment 1: naive RAG vs LightRAG
 
 ```
-.venv\Scripts\python -X utf8 exp1.py index   # about 3 hours; can resume after interruption
-.venv\Scripts\python -X utf8 exp1.py run     # writes results/exp1_naive.jsonl and results/exp1_lightrag.jsonl
+.venv\Scripts\python -X utf8 src\exp1.py index   # about 3 hours; can resume after interruption
+.venv\Scripts\python -X utf8 src\exp1.py run     # writes results/exp1_naive.jsonl and results/exp1_lightrag.jsonl
 ```
 
 Both systems use the same settings:
@@ -71,7 +94,7 @@ LightRAG runs with its default `mix` mode and reranking turned off. Every answer
 ## Evaluation
 
 ```
-.venv\Scripts\python -X utf8 evaluate.py results\exp1_naive.jsonl results\exp1_lightrag.jsonl
+.venv\Scripts\python -X utf8 src\evaluate.py results\exp1_naive.jsonl results\exp1_lightrag.jsonl
 ```
 
 ### The judge: DeepSeek through DeepSeek Harness
@@ -94,7 +117,7 @@ DeepSeek is reached through the DeepSeek Harness (DSH) desktop app rather than t
   ```
   & "$env:LOCALAPPDATA\Programs\DeepSeek Harness\resources\runtime\cli\bin\dsh.cmd" plugin --profile desktop add "link:<path to DSH-Discord-AutoReply>/lightrag-judge"
   ```
-- **`headless` (the default without the plugin).** Each prompt runs as `dsh --profile headless` with the overlay `dsh-judge.patch.yml`, which re-enables the account sign-in, removes every tool and keeps the repository's `CLAUDE.md` out of the context. These sessions are saved on disk but the desktop app does not list them.
+- **`headless` (the default without the plugin).** Each prompt runs as `dsh --profile headless` with the overlay `configs/dsh-judge.patch.yml`, which re-enables the account sign-in, removes every tool and keeps the repository's `CLAUDE.md` out of the context. These sessions are saved on disk but the desktop app does not list them.
 
 By default `desktop` is used when the plugin answers and `headless` otherwise (with an informational `[config]` line); without DeepSeek Harness at all, the local Ollama judge is used, so a teammate needs neither DSH nor the plugin to run anything. Both routes send the same prompt, persona, model and effort, but keep one route for a whole experiment; the open app must stay open for `desktop`, and closing it stops scoring with a clear error (rerun to resume).
 
@@ -162,12 +185,12 @@ The single judging had put `naive` far behind every graph mode (0.703); with thr
 ### The local Ollama judge (fallback)
 
 ```
-ollama create qwen2.5-14b-judge -f judge.Modelfile
+ollama create qwen2.5-14b-judge -f configs\1
 $env:LIGHTRAG_JUDGE_BACKEND = 'ollama'
-.venv\Scripts\python -X utf8 evaluate.py results\exp1_naive.jsonl results\exp1_lightrag.jsonl
+.venv\Scripts\python -X utf8 src\evaluate.py results\exp1_naive.jsonl results\exp1_lightrag.jsonl
 ```
 
-When only the 9B model is available, create its judge instead with `ollama create qwen3.5-9b-judge -f judge-qwen3.5-9b.Modelfile`. The judge model `qwen2.5-14b-judge` is qwen2.5:14b with a 16k context set in its Modelfile. Ollama's OpenAI-compatible API, which RAGAS uses, cannot set the context size per request, so it would otherwise fall back to Ollama's 4k default.
+When only the 9B model is available, create its judge instead with `ollama create qwen3.5-9b-judge -f configs\1`. The judge model `qwen2.5-14b-judge` is qwen2.5:14b with a 16k context set in its Modelfile. Ollama's OpenAI-compatible API, which RAGAS uses, cannot set the context size per request, so it would otherwise fall back to Ollama's 4k default.
 
 The evaluation packages are already in `requirements.txt`. `langchain-community` has to stay below 0.4, because ragas 0.4.3 still imports `ChatVertexAI`, which was removed in 0.4.
 
@@ -187,9 +210,9 @@ Do not run the evaluation while indexing is in progress. The embeddings (and the
 ## Experiment 2: chunk size and top-k
 
 ```
-.venv\Scripts\python -X utf8 exp2.py index   # builds a second graph with 600-token chunks; several hours, resumable
-.venv\Scripts\python -X utf8 exp2.py run
-.venv\Scripts\python -X utf8 exp2.py score   # writes exp2_scores.jsonl and exp2_summary.csv in the judge's folder
+.venv\Scripts\python -X utf8 src\exp2.py index   # builds a second graph with 600-token chunks; several hours, resumable
+.venv\Scripts\python -X utf8 src\exp2.py run
+.venv\Scripts\python -X utf8 src\exp2.py score   # writes exp2_scores.jsonl and exp2_summary.csv in the judge's folder
 ```
 
 A 2x2 grid in `mix` mode: chunk size 600 / 1200 x top-k 20 / 40. top-k is how many entities and relations LightRAG retrieves; `chunk_top_k` stays at its default of 20. Chunk 1200 / top-k 40 is LightRAG's default, which is the Exp 3 `mix` run, so it is reused rather than rerun.
@@ -197,8 +220,8 @@ A 2x2 grid in `mix` mode: chunk size 600 / 1200 x top-k 20 / 40. top-k is how ma
 ## Experiment 3: query modes
 
 ```
-.venv\Scripts\python -X utf8 exp3.py run     # naive, local, global, hybrid, mix on the Exp 1 index
-.venv\Scripts\python -X utf8 exp3.py score   # writes exp3_scores.jsonl and exp3_summary.csv in the judge's folder
+.venv\Scripts\python -X utf8 src\exp3.py run     # naive, local, global, hybrid, mix on the Exp 1 index
+.venv\Scripts\python -X utf8 src\exp3.py score   # writes exp3_scores.jsonl and exp3_summary.csv in the judge's folder
 ```
 
 Faithfulness here is judged against everything LightRAG gave the LLM: the chunk text and the entity and relation descriptions.
@@ -206,7 +229,7 @@ Faithfulness here is judged against everything LightRAG gave the LLM: the chunk 
 ## Export
 
 ```
-.venv\Scripts\python -X utf8 export.py       # writes share/per_question.csv, share/run_info.json and the summaries
+.venv\Scripts\python -X utf8 src\export.py       # writes share/per_question.csv, share/run_info.json and the summaries
 ```
 
 `export.py` takes the scores from the configured judge's folder and records that judge in `run_info.json`. Every row of `per_question.csv` names the model that answered (`rag_model`) and the one that judged (`judge_model`), and gives each RAGAS score's spread and number of judgings (`faithfulness_sd`, `faithfulness_n`, `answer_relevancy_sd`, `answer_relevancy_n`); `run_info.json` lists the models found (`rag_models`, `judge_models`), the repeat count and how many scores still need rescoring, which the export also prints as an `[export]` warning. With `LIGHTRAG_SUBSET` set it writes to `results\<subset>\share\` instead, so a test run never overwrites the committed `share/`.

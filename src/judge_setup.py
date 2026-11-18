@@ -31,7 +31,7 @@ from ragas.metrics.collections import AnswerRelevancy, Faithfulness
 
 import config as C
 
-PATCH = Path(__file__).parent / "dsh-judge.patch.yml"
+PATCH = Path(__file__).resolve().parent.parent / "configs" / "dsh-judge.patch.yml"
 
 # A short tag such as "naive q030 faithfulness" that the scoring loops set before each metric. It becomes the first
 # line of the task, so the DSH session list shows which answer and metric every judging session belongs to.
@@ -86,7 +86,7 @@ class DshJudgeLLM(InstructorBaseRagasLLM):
         self.cli, self.patch, self.model, self.effort = Path(cli), Path(patch), model, effort
         self.workdir, self.timeout_s, self.attempts = Path(workdir), timeout_s, attempts
         self.transport, self.port = transport, port
-        self.repo = Path(repo or Path(__file__).parent).resolve()
+        self.repo = Path(repo or Path(__file__).resolve().parent.parent).resolve()
 
     # RAGAS's collections metrics only call agenerate; this synchronous form exists for completeness and must not be
     # called from inside a running event loop.

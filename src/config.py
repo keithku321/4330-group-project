@@ -5,7 +5,7 @@ import sys
 import urllib.request
 from pathlib import Path
 
-ROOT = Path(__file__).parent
+ROOT = Path(__file__).resolve().parent.parent   # repo root: scripts live in src/
 DATA = ROOT / "data"              # raw downloads (mix.jsonl) are shared by every subset
 
 # LIGHTRAG_SUBSET names a separate corpus/results pair (e.g. "smoke" for a quick test), so a small trial run

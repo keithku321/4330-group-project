@@ -4,9 +4,8 @@
     <SchemaVersion>2.0</SchemaVersion>
     <ProjectGuid>d8559969-e187-49ba-bda5-f814404b0124</ProjectGuid>
     <ProjectHome>.</ProjectHome>
-    <StartupFile>LightRAG.py</StartupFile>
-    <SearchPath>
-    </SearchPath>
+    <StartupFile>src\LightRAG.py</StartupFile>
+    <SearchPath>src</SearchPath>
     <WorkingDirectory>.</WorkingDirectory>
     <OutputPath>.</OutputPath>
     <Name>LightRAG</Name>
@@ -21,28 +20,29 @@
     <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="config.py" />
-    <Compile Include="evaluate.py" />
-    <Compile Include="exp1.py" />
-    <Compile Include="exp2.py" />
-    <Compile Include="exp3.py" />
-    <Compile Include="export.py" />
-    <Compile Include="judge_setup.py" />
-    <Compile Include="lightrag_setup.py" />
-    <Compile Include="LightRAG.py" />
-    <Compile Include="naive_rag.py" />
-    <Compile Include="prep_data.py" />
+    <Compile Include="src\config.py" />
+    <Compile Include="src\evaluate.py" />
+    <Compile Include="src\exp1.py" />
+    <Compile Include="src\exp2.py" />
+    <Compile Include="src\exp3.py" />
+    <Compile Include="src\export.py" />
+    <Compile Include="src\judge_setup.py" />
+    <Compile Include="src\lightrag_setup.py" />
+    <Compile Include="src\LightRAG.py" />
+    <Compile Include="src\naive_rag.py" />
+    <Compile Include="src\prep_data.py" />
   </ItemGroup>
   <ItemGroup>
     <Content Include=".gitignore" />
     <Content Include="CLAUDE.md" />
-    <Content Include="COMP4330_Group5_LightRAG.ipynb" />
+    <Content Include="notebooks\COMP4330_Group5_LightRAG.ipynb" />
     <Content Include="data\dsh-smoke\questions.jsonl" />
     <Content Include="data\smoke\questions.jsonl" />
-    <Content Include="dsh-judge.patch.yml" />
-    <Content Include="judge.Modelfile" />
-    <Content Include="judge-qwen3.5-9b.Modelfile" />
-    <Content Include="PLAN.md" />
+    <Content Include="configs\dsh-judge.patch.yml" />
+    <Content Include="configs\judge.Modelfile" />
+    <Content Include="configs\judge-qwen3.5-9b.Modelfile" />
+    <Content Include="docs\HANDOVER.md" />
+    <Content Include="docs\PLAN.md" />
     <Content Include="README.md" />
     <Content Include="requirements.txt" />
     <Content Include="results\dsh-smoke\exp1_index_cost.json" />
@@ -81,7 +81,10 @@
     <Content Include="share\run_info.json" />
   </ItemGroup>
   <ItemGroup>
+    <Folder Include="configs\" />
     <Folder Include="data\" />
+    <Folder Include="docs\" />
+    <Folder Include="notebooks\" />
     <Folder Include="data\dsh-smoke\" />
     <Folder Include="data\smoke\" />
     <Folder Include="results\" />
@@ -91,6 +94,7 @@
     <Folder Include="results\smoke\" />
     <Folder Include="results\smoke\judge_deepseek-flash\" />
     <Folder Include="share\" />
+    <Folder Include="src\" />
   </ItemGroup>
   <ItemGroup>
     <Interpreter Include=".venv\">

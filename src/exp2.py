@@ -1,8 +1,8 @@
 """Experiment 2 (local): LightRAG chunk size x top-k (2x2) in the default `mix` mode.
 
-    python -X utf8 exp2.py index           # build the chunk-600 graph -> results/lightrag_index_c600 (slow, resumable)
-    python -X utf8 exp2.py run [--limit N] # answer every setting -> results/exp2_c<chunk>_k<top_k>.jsonl (resumable)
-    python -X utf8 exp2.py score           # judge + metrics -> <judge dir>/exp2_scores.jsonl, exp2_summary.csv (resumable)
+    python -X utf8 src/exp2.py index           # build the chunk-600 graph -> results/lightrag_index_c600 (slow, resumable)
+    python -X utf8 src/exp2.py run [--limit N] # answer every setting -> results/exp2_c<chunk>_k<top_k>.jsonl (resumable)
+    python -X utf8 src/exp2.py score           # judge + metrics -> <judge dir>/exp2_scores.jsonl, exp2_summary.csv (resumable)
 
 Chunk 1200 / top-k 40 is LightRAG's default and is exactly the Exp 3 `mix` run, so its answers and scores are reused
 (the scores from the same judge's exp3_scores.jsonl; <judge dir> is config.JUDGE_DIR, see judge_setup.py).

@@ -1,7 +1,7 @@
 """Experiment 1: naive RAG vs LightRAG (default mix mode) on the same corpus, questions and LLM.
 
-    python exp1.py index            # build the LightRAG graph (slow, resumable) and the naive vector index
-    python exp1.py run [--limit N]  # answer the questions with both systems -> results/exp1_*.jsonl (resumable)
+    python src/exp1.py index            # build the LightRAG graph (slow, resumable) and the naive vector index
+    python src/exp1.py run [--limit N]  # answer the questions with both systems -> results/exp1_*.jsonl (resumable)
 """
 import argparse
 import asyncio
